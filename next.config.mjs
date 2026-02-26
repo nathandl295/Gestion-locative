@@ -6,10 +6,3 @@ const nextConfig = {
 }
 
 export default nextConfig
-```
-
-Sauvegarde avec **⌘ + S**, puis dans le terminal :
-```
-git add .
-git commit -m "fix build"
-git push
