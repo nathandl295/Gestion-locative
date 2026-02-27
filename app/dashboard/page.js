@@ -268,6 +268,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           <a href="/parametres" className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100">⚙ Paramètres</a>
+          <a href="/stats" className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100">📊 Statistiques</a>
           <button onClick={() => setShowExport(true)} className="bg-gray-100 text-gray-700 text-sm px-4 py-2 rounded-lg hover:bg-gray-200">↓ Exporter</button>
           <button onClick={() => setConfirmReinit(true)} className="bg-orange-100 text-orange-700 text-sm px-4 py-2 rounded-lg hover:bg-orange-200">↺ Nouveau mois</button>
           <a href="/import" className="bg-gray-100 text-gray-700 text-sm px-4 py-2 rounded-lg hover:bg-gray-200">↑ Importer CSV</a>
