@@ -197,6 +197,32 @@ export default function Dashboard() {
     { label: 'Loyers / mois', value: totalLoyers.toLocaleString('fr-FR') + '€', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', accent: '#4c1d95', onClick: null },
   ]
 
+  // Recommandations IA calculées localement
+  function getRecommandations() {
+    const recs = []
+    enRetard.forEach(l => {
+      const j = joursEnRetard(l.date_retard)
+      const derniereRelance = joursDepuis(l.derniere_relance)
+      if (j >= 21) {
+        recs.push({ locataire: l, jours: j, message: `Mise en demeure recommandée — ${j}j de retard`, action: 'Niveau 3', couleur: '#f87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.2)', icon: '🚨' })
+      } else if (j >= 8 && (derniereRelance === null || derniereRelance >= 7)) {
+        recs.push({ locataire: l, jours: j, message: `Relance ferme recommandée — ${j}j de retard${derniereRelance ? ` · dernière relance il y a ${derniereRelance}j` : ' · aucune relance envoyée'}`, action: 'Niveau 2', couleur: '#fb923c', bg: 'rgba(251,146,60,0.08)', border: 'rgba(251,146,60,0.2)', icon: '⚠️' })
+      } else if (j >= 1 && derniereRelance === null) {
+        recs.push({ locataire: l, jours: j, message: `Premier rappel à envoyer — ${j}j de retard, aucune relance envoyée`, action: 'Niveau 1', couleur: '#fbbf24', bg: 'rgba(251,191,36,0.08)', border: 'rgba(251,191,36,0.2)', icon: '💬' })
+      }
+    })
+    return recs.sort((a, b) => b.jours - a.jours).slice(0, 4)
+  }
+
+  function niveauRelance(l) {
+    const j = joursEnRetard(l.date_retard)
+    if (j >= 21) return { label: 'Niveau 3 · Mise en demeure', color: '#f87171', bg: 'rgba(248,113,113,0.1)' }
+    if (j >= 8) return { label: 'Niveau 2 · Relance ferme', color: '#fb923c', bg: 'rgba(251,146,60,0.1)' }
+    return { label: 'Niveau 1 · Premier rappel', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' }
+  }
+
+  const recommandations = getRecommandations()
+
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
       <style>{`
@@ -255,7 +281,6 @@ export default function Dashboard() {
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             Statistiques
           </a>
-          
           <a href="/historique" className="nav-link">
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Historique
@@ -269,6 +294,10 @@ export default function Dashboard() {
 
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155', letterSpacing: '0.08em', padding: '0 14px', marginBottom: '4px', textTransform: 'uppercase' }}>Parametres</div>
 
+          <a href="/membres" className="nav-link">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Équipe
+          </a>
           <a href="/parametres" className="nav-link">
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Parametres
@@ -359,6 +388,34 @@ export default function Dashboard() {
             ))}
           </div>
 
+          {/* IA Insights */}
+          {recommandations.length > 0 && (
+            <div style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.06), rgba(124,58,237,0.06))', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '16px', padding: '18px 20px', marginBottom: '24px', ...fadeIn(0.25) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>🤖</div>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#a5b4fc' }}>Recommandations IA</span>
+                <span style={{ fontSize: '11px', color: '#475569', marginLeft: '4px' }}>{recommandations.length} action{recommandations.length > 1 ? 's' : ''} prioritaire{recommandations.length > 1 ? 's' : ''}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {recommandations.map((rec, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: rec.bg, border: `1px solid ${rec.border}`, borderRadius: '10px', padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: '14px' }}>{rec.icon}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: rec.couleur }}>{rec.locataire.nom}</span>
+                        <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '8px' }}>{rec.message}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <span style={{ fontSize: '11px', fontWeight: '600', color: rec.couleur, background: rec.bg, border: `1px solid ${rec.border}`, borderRadius: '20px', padding: '2px 10px' }}>{rec.action}</span>
+                      <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }} onClick={() => demanderRelance(rec.locataire)}>Envoyer →</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Barre recherche + onglets */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', ...fadeIn(0.35) }}>
             <div style={{ position: 'relative', flex: 1 }}>
@@ -419,6 +476,11 @@ export default function Dashboard() {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.nom}</div>
                       <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{l.derniere_relance ? ` · Relance il y a ${joursDepuis(l.derniere_relance)}j` : ''}</div>
+                      <div style={{ marginTop: '4px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: niveauRelance(l).color, background: niveauRelance(l).bg, borderRadius: '4px', padding: '2px 6px' }}>
+                          🤖 {niveauRelance(l).label}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
