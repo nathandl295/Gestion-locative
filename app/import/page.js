@@ -1,128 +1,171 @@
 'use client'
 
-import { useState } from 'react'
-import { supabase } from '../supabase'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import Logo from '../logo'
-
-const CHAMPS = [
-  { value: '', label: 'Ignorer' },
-  { value: 'nom', label: 'Nom' },
-  { value: 'email', label: 'Email' },
-  { value: 'telephone', label: 'Téléphone' },
-  { value: 'appartement', label: 'Appartement' },
-  { value: 'loyer_montant', label: 'Loyer (€)' },
-  { value: 'loyer_echeance', label: 'Échéance (jour du mois)' },
-]
+import { supabase } from '../supabase'
+import { useToast } from '../toast'
 
 export default function Import() {
   const router = useRouter()
-  const [headers, setHeaders] = useState([])
-  const [rows, setRows] = useState([])
+  const { toast } = useToast()
+  const [colonnes, setColonnes] = useState([])
+  const [lignes, setLignes] = useState([])
   const [mapping, setMapping] = useState({})
-  const [preview, setPreview] = useState([])
-  const [erreurs, setErreurs] = useState([])
   const [importing, setImporting] = useState(false)
-  const [done, setDone] = useState(false)
-  const [step, setStep] = useState(1)
+  const [drag, setDrag] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const fileRef = useRef()
 
-  function handleFile(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const lignes = ev.target.result.trim().split('\n')
-      const hdrs = lignes[0].split(',').map(h => h.trim())
-      const rawRows = lignes.slice(1).map(l => l.split(',').map(v => v.trim()))
-      const autoMapping = {}
-      hdrs.forEach(h => {
-        const lower = h.toLowerCase()
-        if (lower.includes('nom') || lower.includes('name') || lower.includes('locataire')) autoMapping[h] = 'nom'
-        else if (lower.includes('mail') || lower.includes('email')) autoMapping[h] = 'email'
-        else if (lower.includes('tel') || lower.includes('phone') || lower.includes('mobile')) autoMapping[h] = 'telephone'
-        else if (lower.includes('appart') || lower.includes('logement') || lower.includes('bien')) autoMapping[h] = 'appartement'
-        else if (lower.includes('loyer') || lower.includes('montant')) autoMapping[h] = 'loyer_montant'
-        else if (lower.includes('echeance') || lower.includes('jour')) autoMapping[h] = 'loyer_echeance'
-        else autoMapping[h] = ''
-      })
-      setHeaders(hdrs)
-      setRows(rawRows)
-      setMapping(autoMapping)
-      setStep(2)
-    }
-    reader.readAsText(file)
+  const champs = [
+    { key: 'nom', label: 'Nom', required: true },
+    { key: 'email', label: 'Email', required: false },
+    { key: 'telephone', label: 'Telephone', required: false },
+    { key: 'appartement', label: 'Appartement', required: true },
+    { key: 'loyer_montant', label: 'Loyer (€)', required: true },
+    { key: 'loyer_echeance', label: 'Echeance (jour)', required: false },
+  ]
+
+  function parseCSV(text) {
+    const lines = text.trim().split('\n')
+    if (lines.length < 2) return
+    const sep = lines[0].includes(';') ? ';' : ','
+    const cols = lines[0].split(sep).map(c => c.trim().replace(/['"]/g, ''))
+    const rows = lines.slice(1).map(l => l.split(sep).map(c => c.trim().replace(/['"]/g, '')))
+    setColonnes(cols)
+    setLignes(rows)
+    const autoMap = {}
+    champs.forEach(c => {
+      const idx = cols.findIndex(col => col.toLowerCase().includes(c.key.split('_')[0].toLowerCase()) || col.toLowerCase() === c.label.toLowerCase())
+      if (idx >= 0) autoMap[c.key] = idx
+    })
+    setMapping(autoMap)
   }
 
-  function genererPreview() {
-    const errs = []
-    const result = []
-    if (!Object.values(mapping).includes('nom')) errs.push('Vous devez mapper le champ "Nom"')
-    if (!Object.values(mapping).includes('appartement')) errs.push('Vous devez mapper le champ "Appartement"')
-    if (!Object.values(mapping).includes('loyer_montant')) errs.push('Vous devez mapper le champ "Loyer (€)"')
-    if (errs.length > 0) { setErreurs(errs); return }
-    rows.forEach((row, i) => {
-      const obj = {}
-      headers.forEach((h, idx) => { const champ = mapping[h]; if (champ) obj[champ] = row[idx] || '' })
-      if (!obj.nom) { errs.push('Ligne ' + (i + 2) + ' : nom manquant'); return }
-      if (!obj.appartement) { errs.push('Ligne ' + (i + 2) + ' : appartement manquant'); return }
-      if (!obj.loyer_montant || isNaN(obj.loyer_montant)) { errs.push('Ligne ' + (i + 2) + ' : loyer invalide'); return }
-      result.push({ nom: obj.nom, email: obj.email || '', telephone: obj.telephone || '', appartement: obj.appartement, loyer_montant: parseInt(obj.loyer_montant), loyer_echeance: parseInt(obj.loyer_echeance) || 5, statut: 'en_attente' })
-    })
-    setErreurs(errs)
-    setPreview(result)
-    if (result.length > 0) setStep(3)
+  function handleFile(file) {
+    if (!file) return
+    setFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = e => parseCSV(e.target.result)
+    reader.readAsText(file, 'utf-8')
   }
 
   async function importer() {
+    const required = champs.filter(c => c.required)
+    if (required.some(c => mapping[c.key] === undefined)) { toast('Mappez les colonnes obligatoires (Nom, Appartement, Loyer)', 'error'); return }
     setImporting(true)
-    const { error } = await supabase.from('locataires').insert(preview)
-    if (error) { alert('Erreur : ' + error.message) } else { setDone(true); setTimeout(() => router.push('/dashboard'), 2000) }
-    setImporting(false)
+    const rows = lignes.filter(r => r.some(c => c.trim()))
+    const data = rows.map(r => ({
+      nom: r[mapping.nom] || '',
+      email: mapping.email !== undefined ? r[mapping.email] : '',
+      telephone: mapping.telephone !== undefined ? r[mapping.telephone] : '',
+      appartement: r[mapping.appartement] || '',
+      loyer_montant: parseFloat(r[mapping.loyer_montant]) || 0,
+      loyer_echeance: mapping.loyer_echeance !== undefined ? parseInt(r[mapping.loyer_echeance]) || null : null,
+      statut: 'en_attente',
+    })).filter(d => d.nom && d.appartement)
+    const { error } = await supabase.from('locataires').insert(data)
+    if (error) { toast('Erreur : ' + error.message, 'error'); setImporting(false); return }
+    toast(data.length + ' locataires importes avec succes !', 'success')
+    router.push('/dashboard')
   }
 
+  const selectStyle = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 12px', color: '#f1f5f9', fontSize: '13px', outline: 'none', fontFamily: 'inherit', cursor: 'pointer', width: '100%' }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <Logo />
-        <a href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">← Retour</a>
+    <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex' }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap'); * { box-sizing: border-box; } select option { background: #1a1a24; }`}</style>
+
+      {/* Sidebar */}
+      <div style={{ width: '240px', flexShrink: 0, background: '#13131a', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh' }}>
+        <a href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '16px', textDecoration: 'none' }}>
+          <svg width="28" height="28" viewBox="0 0 60 60"><rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/><rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/><rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/></svg>
+          <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9' }}>GestImmo</span>
+        </a>
+        {[{ href: '/dashboard', label: 'Dashboard' }, { href: '/stats', label: 'Statistiques' }, { href: '/historique', label: 'Historique' }].map(l => (
+          <a key={l.href} href={l.href} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#64748b', textDecoration: 'none', display: 'block', transition: 'all 0.2s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#e2e8f0' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#64748b' }}>{l.label}</a>
+        ))}
+        <div style={{ flex: 1 }} />
+        <a href="/import" style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#60a5fa', textDecoration: 'none', background: 'rgba(59,130,246,0.15)', display: 'block' }}>↑ Importer CSV</a>
       </div>
-      <div className="max-w-3xl mx-auto p-6 flex flex-col gap-6">
-        <div className={`bg-white rounded-xl border p-5 ${step !== 1 && 'opacity-50'}`}>
-          <div className="flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">1</span><h2 className="font-semibold text-gray-900">Charger votre fichier CSV</h2></div>
-          <input type="file" accept=".csv" onChange={handleFile} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+
+      {/* Content */}
+      <div style={{ flex: 1, padding: '40px', maxWidth: '760px' }}>
+        <div style={{ marginBottom: '32px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Importer des locataires</h1>
+          <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>Importez vos locataires depuis un fichier CSV ou Excel.</p>
         </div>
-        {step >= 2 && (
-          <div className="bg-white rounded-xl border p-5">
-            <div className="flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span><h2 className="font-semibold text-gray-900">Associer vos colonnes</h2></div>
-            <div className="flex flex-col gap-3">
-              {headers.map(h => (
-                <div key={h} className="flex items-center justify-between gap-4">
-                  <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 font-medium">{h}</div>
-                  <span className="text-gray-400">→</span>
-                  <select value={mapping[h] || ''} onChange={e => setMapping({ ...mapping, [h]: e.target.value })} className="flex-1 border rounded-lg px-3 py-2 text-sm">
-                    {CHAMPS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+
+        {/* Zone drop */}
+        <div
+          onClick={() => fileRef.current.click()}
+          onDragOver={e => { e.preventDefault(); setDrag(true) }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={e => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]) }}
+          style={{ background: drag ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.02)', border: `2px dashed ${drag ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '16px', padding: '48px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', marginBottom: '24px' }}>
+          <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={e => handleFile(e.target.files[0])} style={{ display: 'none' }} />
+          <div style={{ fontSize: '36px', marginBottom: '12px' }}>📁</div>
+          <div style={{ fontSize: '15px', fontWeight: '600', color: fileName ? '#60a5fa' : '#94a3b8', marginBottom: '6px' }}>{fileName || 'Cliquez ou glissez votre fichier CSV'}</div>
+          <div style={{ fontSize: '12px', color: '#334155' }}>Fichiers .csv ou .tsv — separateur virgule ou point-virgule</div>
+        </div>
+
+        {/* Mapping colonnes */}
+        {colonnes.length > 0 && (
+          <div style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
+            <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Mapping des colonnes</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              {champs.map(c => (
+                <div key={c.key}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {c.label} {c.required && <span style={{ color: '#f87171' }}>*</span>}
+                  </label>
+                  <select style={selectStyle} value={mapping[c.key] ?? ''} onChange={e => setMapping({ ...mapping, [c.key]: e.target.value !== '' ? parseInt(e.target.value) : undefined })}>
+                    <option value="">— Non mappee</option>
+                    {colonnes.map((col, i) => <option key={i} value={i}>{col}</option>)}
                   </select>
                 </div>
               ))}
             </div>
-            {erreurs.length > 0 && <div className="mt-4 bg-red-50 rounded-lg p-3">{erreurs.map((e, i) => <p key={i} className="text-sm text-red-600">{e}</p>)}</div>}
-            <button onClick={genererPreview} className="mt-4 w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-medium hover:bg-blue-700">Vérifier les données →</button>
           </div>
         )}
-        {step >= 3 && preview.length > 0 && (
-          <div className="bg-white rounded-xl border p-5">
-            <div className="flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span><h2 className="font-semibold text-gray-900">{preview.length} locataires prêts à importer</h2></div>
-            <div className="divide-y max-h-64 overflow-y-auto mb-4">
-              {preview.map((l, i) => (
-                <div key={i} className="flex items-center justify-between py-2">
-                  <div><p className="font-medium text-sm text-gray-900">{l.nom}</p><p className="text-xs text-gray-500">{l.appartement} · {l.loyer_montant}€</p></div>
-                  <p className="text-xs text-gray-400">{l.email}</p>
-                </div>
-              ))}
-            </div>
-            {done ? <p className="text-green-600 font-medium text-sm">✓ Import réussi ! Redirection...</p> : <button onClick={importer} disabled={importing} className="w-full bg-green-600 text-white px-4 py-3 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">{importing ? 'Import en cours...' : 'Importer ' + preview.length + ' locataires'}</button>}
+
+        {/* Apercu */}
+        {lignes.length > 0 && (
+          <div style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px', marginBottom: '24px', overflow: 'auto' }}>
+            <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Apercu ({Math.min(lignes.length, 3)} / {lignes.length} lignes)</h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr>{colonnes.map((c, i) => <th key={i} style={{ textAlign: 'left', padding: '8px 12px', color: '#475569', borderBottom: '1px solid rgba(255,255,255,0.06)', fontWeight: '500' }}>{c}</th>)}</tr>
+              </thead>
+              <tbody>
+                {lignes.slice(0, 3).map((r, i) => (
+                  <tr key={i}>{r.map((c, j) => <td key={j} style={{ padding: '8px 12px', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>{c}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+
+        {/* Bouton importer */}
+        {colonnes.length > 0 && (
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <a href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', padding: '11px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', textDecoration: 'none' }}>Annuler</a>
+            <button onClick={importer} disabled={importing} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', padding: '11px 28px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {importing ? 'Import en cours...' : `Importer ${lignes.length} locataires`}
+            </button>
+          </div>
+        )}
+
+        {/* Aide */}
+        <div style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.12)', borderRadius: '14px', padding: '20px', marginTop: '24px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '600', color: '#60a5fa', marginBottom: '10px' }}>💡 Format CSV attendu</div>
+          <code style={{ fontSize: '12px', color: '#475569', fontFamily: "'DM Mono', monospace", display: 'block', lineHeight: 1.8 }}>
+            nom,email,appartement,loyer_montant,loyer_echeance<br/>
+            Sophie Bernard,sophie@email.com,Appt 3A,720,5<br/>
+            Marc Dupont,marc@email.com,Appt 1B,850,10
+          </code>
+        </div>
       </div>
     </div>
   )

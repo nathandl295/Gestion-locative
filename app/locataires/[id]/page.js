@@ -1,136 +1,164 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { use } from 'react'
 import { supabase } from '../../supabase'
-import { useRouter, useParams } from 'next/navigation'
-import Logo from '../../logo'
+import { useToast } from '../../toast'
 
-function joursEnRetard(dateRetard) {
-  if (!dateRetard) return 0
-  const debut = new Date(dateRetard)
-  const aujourd_hui = new Date()
-  const diff = aujourd_hui - debut
-  return Math.floor(diff / (1000 * 60 * 60 * 24))
-}
-
-function formatDate(date) {
-  if (!date) return ''
-  return new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-export default function LocataireDetail() {
+export default function ModifierLocataire({ params: paramsPromise }) {
+  const params = use(paramsPromise)
   const router = useRouter()
-  const { id } = useParams()
-  const [locataire, setLocataire] = useState(null)
-  const [historique, setHistorique] = useState([])
-  const [edit, setEdit] = useState(false)
-  const [form, setForm] = useState({})
-  const [joursRetard, setJoursRetard] = useState(0)
+  const { toast } = useToast()
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [form, setForm] = useState({ nom: '', email: '', telephone: '', appartement: '', loyer_montant: '', loyer_echeance: '', statut: 'en_attente', notes: '', contrat_debut: '', contrat_fin: '' })
 
   useEffect(() => {
-    async function fetchData() {
-      const { data } = await supabase.from('locataires').select('*').eq('id', id).single()
-      setLocataire(data)
-      setForm(data)
-      setJoursRetard(joursEnRetard(data.date_retard))
-      const { data: relances } = await supabase.from('relances').select('*').eq('locataire_id', id).order('envoye_le', { ascending: false })
-      setHistorique(relances || [])
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      const { data } = await supabase.from('locataires').select('*').eq('id', params.id).single()
+      if (data) setForm({
+        nom: data.nom || '', email: data.email || '', telephone: data.telephone || '',
+        appartement: data.appartement || '', loyer_montant: data.loyer_montant || '',
+        loyer_echeance: data.loyer_echeance || '', statut: data.statut || 'en_attente',
+        notes: data.notes || '', contrat_debut: data.contrat_debut || '', contrat_fin: data.contrat_fin || ''
+      })
+      setLoading(false)
     }
-    fetchData()
-  }, [id])
+    init()
+  }, [params.id])
 
-  async function sauvegarder() {
-    const date = new Date()
-    date.setDate(date.getDate() - parseInt(joursRetard || 0))
-    const dateRetard = locataire.statut === 'en_retard' ? date.toISOString() : null
-    await supabase.from('locataires').update({ nom: form.nom, email: form.email, telephone: form.telephone, appartement: form.appartement, loyer_montant: parseInt(form.loyer_montant), loyer_echeance: parseInt(form.loyer_echeance), date_retard: dateRetard }).eq('id', id)
-    setLocataire({ ...form, date_retard: dateRetard })
-    setEdit(false)
+  async function sauvegarder(e) {
+    e.preventDefault()
+    if (!form.nom || !form.appartement || !form.loyer_montant) { toast('Nom, appartement et loyer sont obligatoires', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('locataires').update(form).eq('id', params.id)
+    if (error) { toast('Erreur : ' + error.message, 'error'); setSaving(false); return }
+    toast('Modifications sauvegardees', 'success')
+    router.push('/locataires/' + params.id)
   }
 
-  async function supprimer() {
-    if (!confirm('Supprimer ' + locataire.nom + ' ?')) return
-    await supabase.from('locataires').delete().eq('id', id)
-    router.push('/dashboard')
-  }
+  const inputStyle = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '11px 16px', color: '#f1f5f9', fontSize: '14px', outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.2s' }
+  const labelStyle = { display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const cardStyle = { background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px', marginBottom: '20px' }
+  const focusOn = e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'
+  const focusOff = e => e.target.style.borderColor = 'rgba(255,255,255,0.08)'
 
-  if (!locataire) return <div className="p-6">Chargement...</div>
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: '6px' }}>
+        {[0, 0.15, 0.3].map((d, i) => <div key={i} style={{ width: '6px', height: '32px', background: '#3b82f6', borderRadius: '3px', animation: `pulse 0.9s ease ${d}s infinite` }} />)}
+      </div>
+    </div>
+  )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <Logo />
-        <a href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">← Retour</a>
+    <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex' }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap'); * { box-sizing: border-box; } input,select,textarea { font-family: inherit; }`}</style>
+
+      {/* Sidebar */}
+      <div style={{ width: '240px', flexShrink: 0, background: '#13131a', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh' }}>
+        <a href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '16px', textDecoration: 'none' }}>
+          <svg width="28" height="28" viewBox="0 0 60 60"><rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/><rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/><rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/></svg>
+          <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9' }}>GestImmo</span>
+        </a>
+        {[{ href: '/dashboard', label: 'Dashboard' }, { href: '/stats', label: 'Statistiques' }, { href: '/historique', label: 'Historique' }].map(l => (
+          <a key={l.href} href={l.href} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#64748b', textDecoration: 'none', display: 'block', transition: 'all 0.2s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#e2e8f0' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#64748b' }}>{l.label}</a>
+        ))}
+        <div style={{ flex: 1 }} />
+        <a href={'/locataires/' + params.id} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#94a3b8', textDecoration: 'none', background: 'rgba(255,255,255,0.04)', display: 'block' }}>← Retour au profil</a>
       </div>
-      <div className="max-w-lg mx-auto p-6 flex flex-col gap-6">
-        <div className="bg-white rounded-xl border p-6 flex flex-col gap-4">
-          {!edit ? (
-            <>
-              <div className="flex flex-col gap-3">
-                <div><p className="text-xs text-gray-500">Nom</p><p className="font-medium">{locataire.nom}</p></div>
-                <div><p className="text-xs text-gray-500">Email</p><p className="font-medium">{locataire.email}</p></div>
-                <div><p className="text-xs text-gray-500">Téléphone</p><p className="font-medium">{locataire.telephone}</p></div>
-                <div><p className="text-xs text-gray-500">Appartement</p><p className="font-medium">{locataire.appartement}</p></div>
-                <div><p className="text-xs text-gray-500">Loyer</p><p className="font-medium">{locataire.loyer_montant}€</p></div>
-                <div><p className="text-xs text-gray-500">Échéance</p><p className="font-medium">Le {locataire.loyer_echeance} du mois</p></div>
-                <div><p className="text-xs text-gray-500">Statut</p><p className="font-medium capitalize">{locataire.statut.replace('_', ' ')}</p></div>
-                {locataire.statut === 'en_retard' && <div><p className="text-xs text-gray-500">Jours de retard</p><p className="font-medium text-red-500">{joursEnRetard(locataire.date_retard)} jours</p></div>}
-              </div>
-              <div className="flex gap-3 mt-2">
-                <button onClick={() => setEdit(true)} className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium">Modifier</button>
-                <button onClick={supprimer} className="flex-1 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 text-sm font-medium">Supprimer</button>
-              </div>
-            </>
-          ) : (
-            <>
-              {[
-                { label: 'Nom', key: 'nom' },
-                { label: 'Email', key: 'email' },
-                { label: 'Téléphone', key: 'telephone' },
-                { label: 'Appartement', key: 'appartement' },
-                { label: 'Loyer (€)', key: 'loyer_montant', type: 'number' },
-                { label: 'Échéance (jour du mois)', key: 'loyer_echeance', type: 'number' },
-              ].map(({ label, key, type }) => (
-                <div key={key}>
-                  <label className="text-sm font-medium text-gray-700">{label}</label>
-                  <input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" type={type || 'text'} value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })} />
-                </div>
-              ))}
-              {locataire.statut === 'en_retard' && (
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Jours de retard</label>
-                  <input className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" type="number" min="0" value={joursRetard} onChange={e => setJoursRetard(e.target.value)} />
-                </div>
-              )}
-              <div className="flex gap-3 mt-2">
-                <button onClick={sauvegarder} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-medium">Sauvegarder</button>
-                <button onClick={() => setEdit(false)} className="flex-1 bg-gray-200 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-300 text-sm font-medium">Annuler</button>
-              </div>
-            </>
-          )}
+
+      {/* Content */}
+      <div style={{ flex: 1, padding: '40px', maxWidth: '700px' }}>
+        <div style={{ marginBottom: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Modifier le locataire</h1>
+            <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{form.nom} · {form.appartement}</p>
+          </div>
         </div>
 
-        <div className="bg-white rounded-xl border p-6">
-          <h2 className="font-semibold text-gray-900 mb-3">Historique des relances</h2>
-          {historique.length === 0 ? (
-            <p className="text-sm text-gray-400">Aucune relance envoyée pour l'instant.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {historique.map((r) => (
-                <div key={r.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-600 text-sm">✉</span>
-                    <span className="text-sm font-medium text-gray-800">{r.template_nom}</span>
-                  </div>
-                  <div className="text-right">
-  <p className="text-xs text-gray-400">{formatDate(r.envoye_le)}</p>
-  <p className="text-xs text-blue-400">il y a {Math.floor((new Date() - new Date(r.envoye_le)) / (1000 * 60 * 60 * 24)) === 0 ? "moins d'1 jour" : Math.floor((new Date() - new Date(r.envoye_le)) / (1000 * 60 * 60 * 24)) + ' jours'}</p>
-</div>
-                </div>
-              ))}
+        <form onSubmit={sauvegarder}>
+
+          {/* Infos personnelles */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Informations personnelles</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>Nom complet <span style={{ color: '#f87171' }}>*</span></label>
+                <input style={inputStyle} value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
+              </div>
+              <div>
+                <label style={labelStyle}>Email</label>
+                <input type="email" style={inputStyle} value={form.email} onChange={e => setForm({...form, email: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+              </div>
+              <div>
+                <label style={labelStyle}>Telephone</label>
+                <input style={inputStyle} value={form.telephone} onChange={e => setForm({...form, telephone: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+
+          {/* Loyer */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Loyer</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>Appartement <span style={{ color: '#f87171' }}>*</span></label>
+                <input style={inputStyle} value={form.appartement} onChange={e => setForm({...form, appartement: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
+              </div>
+              <div>
+                <label style={labelStyle}>Montant (€) <span style={{ color: '#f87171' }}>*</span></label>
+                <input type="number" style={inputStyle} value={form.loyer_montant} onChange={e => setForm({...form, loyer_montant: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
+              </div>
+              <div>
+                <label style={labelStyle}>Echeance (jour)</label>
+                <input type="number" min="1" max="31" style={inputStyle} value={form.loyer_echeance} onChange={e => setForm({...form, loyer_echeance: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+              </div>
+              <div>
+                <label style={labelStyle}>Statut</label>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.statut} onChange={e => setForm({...form, statut: e.target.value})}>
+                  <option value="en_attente">En attente</option>
+                  <option value="paye">Paye</option>
+                  <option value="en_retard">En retard</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Contrat */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Contrat de bail</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={labelStyle}>Date de debut</label>
+                <input type="date" style={inputStyle} value={form.contrat_debut} onChange={e => setForm({...form, contrat_debut: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+              </div>
+              <div>
+                <label style={labelStyle}>Date de fin</label>
+                <input type="date" style={inputStyle} value={form.contrat_fin} onChange={e => setForm({...form, contrat_fin: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notes internes</h2>
+            <textarea style={{ ...inputStyle, minHeight: '100px', resize: 'vertical', lineHeight: 1.6 }} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} onFocus={focusOn} onBlur={focusOff} placeholder="Notes visibles uniquement par vous..." />
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <a href={'/locataires/' + params.id} style={{ display: 'inline-flex', alignItems: 'center', padding: '11px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', textDecoration: 'none' }}>Annuler</a>
+            <button type="submit" disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 28px', borderRadius: '10px', fontSize: '14px', fontWeight: '600', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', transition: 'all 0.2s', opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Sauvegarde...' : 'Sauvegarder les modifications'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )

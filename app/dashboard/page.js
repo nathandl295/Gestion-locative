@@ -1,41 +1,32 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../supabase'
-import Logo from '../logo'
+import { useToast } from '../toast'
 
 function joursEnRetard(dateRetard) {
   if (!dateRetard) return 0
-  const debut = new Date(dateRetard)
-  const aujourd_hui = new Date()
-  const diff = aujourd_hui - debut
-  return Math.floor(diff / (1000 * 60 * 60 * 24))
+  return Math.floor((new Date() - new Date(dateRetard)) / 86400000)
 }
-
 function joursDepuis(date) {
   if (!date) return null
-  const d = new Date(date)
-  const diff = new Date() - d
-  return Math.floor(diff / (1000 * 60 * 60 * 24))
+  return Math.floor((new Date() - new Date(date)) / 86400000)
 }
-
 function prochainPaiement(echeance) {
   if (!echeance) return null
-  const aujourd_hui = new Date()
-  const jourDuMois = aujourd_hui.getDate()
-  const mois = aujourd_hui.getMonth()
-  const annee = aujourd_hui.getFullYear()
-  if (jourDuMois < echeance) {
-    return echeance - jourDuMois
-  } else {
-    const joursRestantsMois = new Date(annee, mois + 1, 0).getDate() - jourDuMois
-    return joursRestantsMois + echeance
-  }
+  const auj = new Date(), j = auj.getDate(), m = auj.getMonth(), a = auj.getFullYear()
+  if (j < echeance) return echeance - j
+  return new Date(a, m + 1, 0).getDate() - j + echeance
+}
+function joursAvantExpiration(contrat_fin) {
+  if (!contrat_fin) return null
+  return Math.floor((new Date(contrat_fin) - new Date()) / 86400000)
 }
 
 export default function Dashboard() {
   const router = useRouter()
+  const { toast } = useToast()
   const [locataires, setLocataires] = useState([])
   const [nomAgence, setNomAgence] = useState('')
   const [recherche, setRecherche] = useState('')
@@ -44,11 +35,10 @@ export default function Dashboard() {
   const [confirmReinit, setConfirmReinit] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tri, setTri] = useState('retard_desc')
-  const [filtreMinLoyer, setFiltreMinLoyer] = useState('')
-  const [filtreMaxLoyer, setFiltreMaxLoyer] = useState('')
-  const [filtreMinJours, setFiltreMinJours] = useState('')
-  const [showFiltres, setShowFiltres] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [showAlertes, setShowAlertes] = useState(false)
+  const [alertesDismissed, setAlertesDismissed] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -59,334 +49,489 @@ export default function Dashboard() {
       const { data: agence } = await supabase.from('agence').select('*').single()
       if (agence) setNomAgence(agence.nom)
       setLoading(false)
+      setTimeout(() => setMounted(true), 50)
     }
     init()
+    const dismissed = localStorage.getItem('alertes_dismissed')
+    if (!dismissed) setShowAlertes(true)
+    else setAlertesDismissed(true)
   }, [])
 
-  async function deconnexion() {
-    await supabase.auth.signOut()
-    router.push('/login')
+  function fermerAlertes() {
+    setShowAlertes(false); setAlertesDismissed(true)
+    localStorage.setItem('alertes_dismissed', '1')
   }
+  function rouvriAlertes() {
+    setShowAlertes(true); setAlertesDismissed(false)
+    localStorage.removeItem('alertes_dismissed')
+  }
+
+  async function deconnexion() { await supabase.auth.signOut(); router.push('/login') }
 
   async function reinitialiserMois() {
     await supabase.from('locataires').update({ statut: 'en_attente' }).eq('statut', 'paye')
-    setLocataires(locataires.map(l => l.statut === 'paye' ? { ...l, statut: 'en_attente' } : l))
-    setConfirmReinit(false)
-    setOnglet('attente')
+    setLocataires(l => l.map(x => x.statut === 'paye' ? { ...x, statut: 'en_attente' } : x))
+    setConfirmReinit(false); setOnglet('attente')
+    toast('Nouveau mois initialise', 'info')
+  }
+
+  async function marquerPaye(id, nom) {
+    await supabase.from('locataires').update({ statut: 'paye', date_retard: null }).eq('id', id)
+    setLocataires(l => l.map(x => x.id === id ? { ...x, statut: 'paye', date_retard: null } : x))
+    toast(nom + ' marque comme paye', 'success')
+  }
+
+  async function marquerEnRetard(id) {
+    const jours = prompt("Depuis combien de jours ? (0 = aujourd'hui)")
+    if (jours === null) return
+    const date = new Date(); date.setDate(date.getDate() - parseInt(jours || 0))
+    await supabase.from('locataires').update({ statut: 'en_retard', date_retard: date.toISOString() }).eq('id', id)
+    setLocataires(l => l.map(x => x.id === id ? { ...x, statut: 'en_retard', date_retard: date.toISOString() } : x))
+    toast('Locataire passe en retard', 'warning')
   }
 
   async function toutMarquerPaye() {
     await supabase.from('locataires').update({ statut: 'paye', date_retard: null }).eq('statut', 'en_attente')
-    setLocataires(locataires.map(l => l.statut === 'en_attente' ? { ...l, statut: 'paye', date_retard: null } : l))
-    setOnglet('paye')
+    setLocataires(l => l.map(x => x.statut === 'en_attente' ? { ...x, statut: 'paye', date_retard: null } : x))
+    setOnglet('paye'); toast('Tous marques comme payes', 'success')
   }
 
   async function toutMarquerEnRetard() {
     const date = new Date().toISOString()
     await supabase.from('locataires').update({ statut: 'en_retard', date_retard: date }).eq('statut', 'en_attente')
-    setLocataires(locataires.map(l => l.statut === 'en_attente' ? { ...l, statut: 'en_retard', date_retard: date } : l))
-    setOnglet('retard')
-  }
-
-  function exporterCSV(liste, nom) {
-    const headers = ['Nom', 'Email', 'Téléphone', 'Appartement', 'Loyer (€)', 'Statut', 'Jours de retard']
-    const rows = liste.map(l => [l.nom, l.email || '', l.telephone || '', l.appartement, l.loyer_montant, l.statut, joursEnRetard(l.date_retard) || ''])
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = nom + '_' + new Date().toLocaleDateString('fr-FR').replace(/\//g, '-') + '.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-    setShowExport(false)
-  }
-
-  function exporterPDF(liste, titre) {
-    const date = new Date().toLocaleDateString('fr-FR')
-    const rows = liste.map(l => `<tr><td>${l.nom}</td><td>${l.appartement}</td><td>${l.loyer_montant}€</td><td>${joursEnRetard(l.date_retard) > 0 ? joursEnRetard(l.date_retard) + 'j' : '-'}</td><td>${l.email || '-'}</td><td>${l.telephone || '-'}</td></tr>`).join('')
-    const html = `<html><head><meta charset="utf-8"><title>${titre}</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#111}h1{font-size:22px;margin-bottom:4px}p{color:#888;font-size:13px;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f1f5f9;padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid #e2e8f0}td{padding:9px 12px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#fafafa}.footer{margin-top:30px;font-size:11px;color:#aaa;text-align:right}</style></head><body><h1>${titre}</h1><p>${nomAgence} · Généré le ${date} · ${liste.length} locataire${liste.length > 1 ? 's' : ''}</p><table><thead><tr><th>Nom</th><th>Appartement</th><th>Loyer</th><th>Retard</th><th>Email</th><th>Téléphone</th></tr></thead><tbody>${rows}</tbody></table><div class="footer">GestImmo · ${nomAgence}</div></body></html>`
-    const win = window.open('', '_blank')
-    win.document.write(html)
-    win.document.close()
-    win.print()
-    setShowExport(false)
-  }
-
-  function filtrerEtTrier(liste) {
-    let result = [...liste]
-    if (recherche) {
-      const q = recherche.toLowerCase()
-      result = result.filter(l => l.nom.toLowerCase().includes(q) || l.appartement.toLowerCase().includes(q) || (l.email && l.email.toLowerCase().includes(q)))
-    }
-    if (filtreMinLoyer) result = result.filter(l => l.loyer_montant >= parseInt(filtreMinLoyer))
-    if (filtreMaxLoyer) result = result.filter(l => l.loyer_montant <= parseInt(filtreMaxLoyer))
-    if (filtreMinJours) result = result.filter(l => joursEnRetard(l.date_retard) >= parseInt(filtreMinJours))
-    if (tri === 'retard_desc') result.sort((a, b) => joursEnRetard(b.date_retard) - joursEnRetard(a.date_retard))
-    if (tri === 'retard_asc') result.sort((a, b) => joursEnRetard(a.date_retard) - joursEnRetard(b.date_retard))
-    if (tri === 'nom_asc') result.sort((a, b) => a.nom.localeCompare(b.nom))
-    if (tri === 'nom_desc') result.sort((a, b) => b.nom.localeCompare(a.nom))
-    if (tri === 'loyer_desc') result.sort((a, b) => b.loyer_montant - a.loyer_montant)
-    if (tri === 'loyer_asc') result.sort((a, b) => a.loyer_montant - b.loyer_montant)
-    return result
-  }
-
-  const enRetard = filtrerEtTrier(locataires.filter(l => l.statut === 'en_retard'))
-  const payes = filtrerEtTrier(locataires.filter(l => l.statut === 'paye'))
-  const enAttente = filtrerEtTrier(locataires.filter(l => l.statut === 'en_attente'))
-
-  const totalRetard = locataires.filter(l => l.statut === 'en_retard').length
-  const totalPaye = locataires.filter(l => l.statut === 'paye').length
-  const totalAttente = locataires.filter(l => l.statut === 'en_attente').length
-  const filtresActifs = filtreMinLoyer || filtreMaxLoyer || filtreMinJours
-
-  function resetFiltres() { setFiltreMinLoyer(''); setFiltreMaxLoyer(''); setFiltreMinJours('') }
-
-  async function marquerPaye(id) {
-    await supabase.from('locataires').update({ statut: 'paye', date_retard: null }).eq('id', id)
-    setLocataires(locataires.map(l => l.id === id ? { ...l, statut: 'paye', date_retard: null } : l))
-  }
-
-  async function marquerEnRetard(id) {
-    const jours = prompt("Depuis combien de jours est-il en retard ? (0 si ca commence aujourd'hui)")
-    if (jours === null) return
-    const date = new Date()
-    date.setDate(date.getDate() - parseInt(jours || 0))
-    const dateRetard = date.toISOString()
-    await supabase.from('locataires').update({ statut: 'en_retard', date_retard: dateRetard }).eq('id', id)
-    setLocataires(locataires.map(l => l.id === id ? { ...l, statut: 'en_retard', date_retard: dateRetard } : l))
+    setLocataires(l => l.map(x => x.statut === 'en_attente' ? { ...x, statut: 'en_retard', date_retard: date } : x))
+    setOnglet('retard'); toast('Tous passes en retard', 'warning')
   }
 
   async function demanderRelance(locataire) {
     const jours = joursEnRetard(locataire.date_retard)
     const { data: templates } = await supabase.from('templates').select('*').order('jours_min')
-    const template = templates.find(t => jours >= t.jours_min && (t.jours_max === null || jours <= t.jours_max))
-    if (!template) { alert('Aucun template trouvé pour ' + jours + ' jours de retard.'); return }
+    const template = templates?.find(t => jours >= t.jours_min && (t.jours_max === null || jours <= t.jours_max))
+    if (!template) { toast('Aucun template pour ' + jours + 'j de retard', 'error'); return }
     setConfirmation({ locataire, template, jours })
   }
 
   async function confirmerRelance() {
-    const { locataire, template } = confirmation
-    setConfirmation(null)
-    const corps = template.corps.split('\\n').join('<br/>').split('\n').join('<br/>').replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
+    const { locataire, template } = confirmation; setConfirmation(null)
+    const corps = template.corps.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
     const sujet = template.sujet.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
-    await fetch('/api/relance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: locataire.nom, email: locataire.email, sujet, corps, locataire_id: locataire.id, template_nom: template.nom }) })
-    const now = new Date().toISOString()
-    setLocataires(locataires.map(l => l.id === locataire.id ? { ...l, derniere_relance: now } : l))
+    const res = await fetch('/api/relance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: locataire.nom, email: locataire.email, sujet, corps: corps.split('\n').join('<br/>'), locataire_id: locataire.id, template_nom: template.nom }) })
+    if (res.ok) toast('Relance envoyee a ' + locataire.nom, 'success')
+    else toast('Erreur lors de l\'envoi', 'error')
+    setLocataires(l => l.map(x => x.id === locataire.id ? { ...x, derniere_relance: new Date().toISOString() } : x))
   }
 
-  function badgeRetard(jours) {
-    if (jours >= 20) return <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700">{jours}j de retard</span>
-    if (jours >= 10) return <span className="text-xs font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-700">{jours}j de retard</span>
-    if (jours >= 5) return <span className="text-xs font-bold px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">{jours}j de retard</span>
-    return <span className="text-xs font-bold px-2 py-1 rounded-full bg-gray-100 text-gray-600">{jours}j de retard</span>
+  function genererQuittance(locataire) {
+    const now = new Date()
+    const mois = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+    const moisC = mois.charAt(0).toUpperCase() + mois.slice(1)
+    const dateAuj = now.toLocaleDateString('fr-FR')
+    const debut = '01/' + String(now.getMonth() + 1).padStart(2, '0') + '/' + now.getFullYear()
+    const fin = new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('fr-FR')
+    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Quittance - ${locataire.nom}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;color:#1a1a1a;padding:60px;max-width:800px;margin:0 auto}.h{border-bottom:3px solid #2563eb;padding-bottom:24px;margin-bottom:32px;display:flex;justify-content:space-between}.logo{font-size:26px;font-weight:bold;color:#2563eb}.ib{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:20px}.ir{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}.ir:last-child{border-bottom:none}.mb{background:#2563eb;color:white;border-radius:10px;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}.mv{font-size:32px;font-weight:bold}.dec{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:20px 0;font-size:13px;line-height:1.7;color:#166534}.sl{width:200px;border-bottom:2px solid #1a1a1a;height:60px;margin-bottom:8px}.ft{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af}</style></head><body><div class="h"><div><div class="logo">${nomAgence || 'GestImmo'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px">Gestion locative</div></div><div style="text-align:right"><div style="font-size:20px;font-weight:bold">Quittance de loyer</div><div style="font-size:14px;color:#6b7280;margin-top:4px">${moisC}</div></div></div><div class="ib"><div class="ir"><span style="color:#6b7280">Nom</span><strong>${locataire.nom}</strong></div><div class="ir"><span style="color:#6b7280">Logement</span><strong>${locataire.appartement}</strong></div>${locataire.email ? `<div class="ir"><span style="color:#6b7280">Email</span><strong>${locataire.email}</strong></div>` : ''}</div><div class="ib"><div class="ir"><span style="color:#6b7280">Du</span><strong>${debut}</strong></div><div class="ir"><span style="color:#6b7280">Au</span><strong>${fin}</strong></div><div class="ir"><span style="color:#6b7280">Emis le</span><strong>${dateAuj}</strong></div></div><div class="mb"><span>Loyer mensuel charges comprises</span><span class="mv">${locataire.loyer_montant} €</span></div><div class="dec">Je soussigne(e), <strong>${nomAgence || 'le gestionnaire'}</strong>, declare avoir recu de <strong>${locataire.nom}</strong>, locataire du logement situe au <strong>${locataire.appartement}</strong>, la somme de <strong>${locataire.loyer_montant} euros</strong> au titre du loyer du mois de <strong>${moisC}</strong>. Cette quittance annule tous les recus precedents.</div><div style="display:flex;justify-content:flex-end;margin-top:40px"><div style="text-align:center"><div class="sl"></div><div style="font-size:12px;color:#6b7280">Signature du gestionnaire</div></div></div><div class="ft">Document genere par GestImmo &bull; ${dateAuj}</div><script>window.onload=function(){window.print()}<\/script></body></html>`
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'quittance_' + locataire.nom.replace(/ /g, '_') + '_' + dateAuj.replace(/\//g, '-') + '.html'
+    a.click(); URL.revokeObjectURL(url)
+    toast('Quittance generee pour ' + locataire.nom, 'success')
   }
 
-  function badgeProchainPaiement(jours) {
-    if (jours <= 3) return <span className="text-xs font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-600">Dans {jours}j</span>
-    if (jours <= 7) return <span className="text-xs font-bold px-2 py-1 rounded-full bg-yellow-100 text-yellow-600">Dans {jours}j</span>
-    return <span className="text-xs font-bold px-2 py-1 rounded-full bg-green-100 text-green-600">Dans {jours}j</span>
+  function exporterCSV() {
+    const headers = ['Nom', 'Email', 'Telephone', 'Appartement', 'Loyer', 'Statut']
+    const rows = locataires.map(l => [l.nom, l.email || '', l.telephone || '', l.appartement, l.loyer_montant, l.statut])
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'locataires_' + new Date().toLocaleDateString('fr-FR').replace(/\//g, '-') + '.csv'
+    a.click(); URL.revokeObjectURL(url)
+    setShowExport(false); toast('Export CSV telecharge', 'success')
   }
 
-  const onglets = [
-    { id: 'retard', label: 'En retard', count: totalRetard, color: 'text-red-500' },
-    { id: 'attente', label: 'En attente', count: totalAttente, color: 'text-orange-400' },
-    { id: 'paye', label: 'Payés', count: totalPaye, color: 'text-green-500' },
+  function filtrer(liste) {
+    if (!recherche) return [...liste].sort((a, b) => {
+      if (tri === 'retard_desc') return joursEnRetard(b.date_retard) - joursEnRetard(a.date_retard)
+      if (tri === 'nom_asc') return a.nom.localeCompare(b.nom)
+      if (tri === 'loyer_desc') return b.loyer_montant - a.loyer_montant
+      return 0
+    })
+    const q = recherche.toLowerCase()
+    return liste.filter(l => l.nom.toLowerCase().includes(q) || l.appartement.toLowerCase().includes(q) || (l.email && l.email.toLowerCase().includes(q)))
+  }
+
+  const enRetard = filtrer(locataires.filter(l => l.statut === 'en_retard'))
+  const payes = filtrer(locataires.filter(l => l.statut === 'paye'))
+  const enAttente = filtrer(locataires.filter(l => l.statut === 'en_attente'))
+  const totalRetard = locataires.filter(l => l.statut === 'en_retard').length
+  const totalPaye = locataires.filter(l => l.statut === 'paye').length
+  const totalAttente = locataires.filter(l => l.statut === 'en_attente').length
+  const totalLoyers = locataires.reduce((acc, l) => acc + (parseFloat(l.loyer_montant) || 0), 0)
+  const contratsExpirants = locataires.filter(l => { const j = joursAvantExpiration(l.contrat_fin); return j !== null && j <= 90 })
+
+  const listeActive = onglet === 'retard' ? enRetard : onglet === 'paye' ? payes : enAttente
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+      <style>{`@keyframes pulse-bar { 0%,100%{transform:scaleY(0.4)} 50%{transform:scaleY(1)} }`}</style>
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        {[0, 0.15, 0.3].map((d, i) => (
+          <div key={i} style={{ width: '6px', height: '32px', background: '#3b82f6', borderRadius: '3px', animation: `pulse-bar 0.9s ease-in-out ${d}s infinite` }} />
+        ))}
+      </div>
+      <p style={{ color: '#6b7280', fontSize: '13px', letterSpacing: '0.05em' }}>Chargement...</p>
+    </div>
+  )
+
+  const fadeIn = (delay = 0) => ({
+    opacity: mounted ? 1 : 0,
+    transform: mounted ? 'translateY(0)' : 'translateY(16px)',
+    transition: `opacity 0.5s ease ${delay}s, transform 0.5s ease ${delay}s`
+  })
+
+  const statCards = [
+    { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', accent: '#334155', onClick: null },
+    { label: 'En retard', value: totalRetard, color: '#f87171', bg: 'rgba(248,113,113,0.08)', accent: '#7f1d1d', onClick: () => setOnglet('retard') },
+    { label: 'Payes', value: totalPaye, color: '#34d399', bg: 'rgba(52,211,153,0.08)', accent: '#064e3b', onClick: () => setOnglet('paye') },
+    { label: 'En attente', value: totalAttente, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', accent: '#7c2d12', onClick: () => setOnglet('attente') },
+    { label: 'Loyers / mois', value: totalLoyers.toLocaleString('fr-FR') + '€', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', accent: '#4c1d95', onClick: null },
   ]
 
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Chargement...</p></div>
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1a1a24; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+        .nav-link:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+        .nav-link.active { background: rgba(59,130,246,0.15); color: #60a5fa; }
+        .stat-card { border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.06); transition: all 0.2s; position: relative; overflow: hidden; }
+        .stat-card.clickable { cursor: pointer; } .stat-card.clickable:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); }
+        .row-item { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
+        .row-item:last-child { border-bottom: none; } .row-item:hover { background: rgba(255,255,255,0.03); }
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.15s; text-decoration: none; }
+        .btn:hover { transform: translateY(-1px); } .btn:active { transform: translateY(0); }
+        .btn-blue { background: #2563eb; color: white; } .btn-blue:hover { background: #1d4ed8; }
+        .btn-green { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.2); } .btn-green:hover { background: rgba(52,211,153,0.25); }
+        .btn-red { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.2); } .btn-red:hover { background: rgba(248,113,113,0.25); }
+        .btn-ghost { background: rgba(255,255,255,0.06); color: #94a3b8; } .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; }
+        .btn-purple { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); } .btn-purple:hover { background: rgba(167,139,250,0.25); }
+        .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .tab { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.2s; }
+        .tab.active { background: #2563eb; color: white; } .tab.inactive { background: transparent; color: #64748b; } .tab.inactive:hover { color: #94a3b8; background: rgba(255,255,255,0.04); }
+        .input-search { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 10px 16px; color: #e2e8f0; font-size: 14px; outline: none; width: 100%; transition: all 0.2s; }
+        .input-search:focus { border-color: rgba(59,130,246,0.4); background: rgba(255,255,255,0.07); }
+        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; backdrop-filter: blur(4px); }
+        .modal { background: #1a1a24; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 28px; max-width: 440px; width: 100%; }
+        @keyframes fadeInUp { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform: translateY(0); } }
+        .animate-in { animation: fadeInUp 0.4s ease forwards; }
+      `}</style>
 
-      {confirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Confirmer l'envoi</h2>
-            <p className="text-gray-600 mb-1">Vous allez envoyer <span className="font-semibold text-blue-600">"{confirmation.template.nom}"</span> à <span className="font-semibold">{confirmation.locataire.nom}</span>.</p>
-            <p className="text-sm text-gray-400 mb-5">{confirmation.jours} jour{confirmation.jours > 1 ? 's' : ''} de retard · {confirmation.locataire.appartement}</p>
-            <div className="bg-gray-50 rounded-xl p-3 mb-5">
-              <p className="text-xs text-gray-500 font-medium mb-1">Sujet : {confirmation.template.sujet}</p>
-              <p className="text-xs text-gray-400 whitespace-pre-line">{confirmation.template.corps.substring(0, 120)}...</p>
+      <div style={{ display: 'flex', minHeight: '100vh' }}>
+
+        {/* Sidebar */}
+        <div style={{ width: '240px', flexShrink: 0, background: '#13131a', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', ...fadeIn(0) }}>
+          {/* Logo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '16px' }}>
+            <svg width="28" height="28" viewBox="0 0 60 60">
+              <rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/>
+              <rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/>
+              <rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/>
+            </svg>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.3px' }}>GestImmo</div>
+              {nomAgence && <div style={{ fontSize: '11px', color: '#475569', marginTop: '1px' }}>{nomAgence}</div>}
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmation(null)} className="flex-1 bg-gray-100 text-gray-600 px-4 py-3 rounded-xl font-medium hover:bg-gray-200">Annuler</button>
-              <button onClick={confirmerRelance} className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-xl font-medium hover:bg-blue-700">Envoyer ✉</button>
+          </div>
+
+          <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155', letterSpacing: '0.08em', padding: '0 14px', marginBottom: '4px', textTransform: 'uppercase' }}>Navigation</div>
+
+          <button className="nav-link active">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Dashboard
+          </button>
+          <a href="/stats" className="nav-link">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Statistiques
+          </a>
+          
+          <a href="/historique" className="nav-link">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Historique
+          </a>
+          <a href="/locataires/nouveau" className="nav-link">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nouveau locataire
+          </a>
+
+          <div style={{ flex: 1 }} />
+
+          <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155', letterSpacing: '0.08em', padding: '0 14px', marginBottom: '4px', textTransform: 'uppercase' }}>Parametres</div>
+
+          <a href="/parametres" className="nav-link">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Parametres
+          </a>
+          <a href="/import" className="nav-link">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Importer CSV
+          </a>
+          <button className="nav-link" onClick={() => setShowExport(true)}>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exporter
+          </button>
+
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '8px 0' }} />
+
+          <button className="nav-link" onClick={deconnexion} style={{ color: '#f87171' }}>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Deconnexion
+          </button>
+        </div>
+
+        {/* Main content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
+
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px', ...fadeIn(0.1) }}>
+            <div>
+              <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Dashboard</h1>
+              <p style={{ fontSize: '13px', color: '#475569', marginTop: '3px' }}>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              {contratsExpirants.length > 0 && alertesDismissed && (
+                <button className="btn btn-ghost" onClick={rouvriAlertes} title="Contrats expirants" style={{ color: '#fb923c', background: 'rgba(251,146,60,0.1)' }}>
+                  ⚠️ {contratsExpirants.length}
+                </button>
+              )}
+              <button className="btn btn-ghost" onClick={() => setConfirmReinit(true)}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Nouveau mois
+              </button>
+              <a href="/locataires/nouveau" className="btn btn-blue">
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Nouveau locataire
+              </a>
+            </div>
+          </div>
+
+          {/* Alertes contrats */}
+          {contratsExpirants.length > 0 && showAlertes && (
+            <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '14px', padding: '16px 20px', marginBottom: '24px', ...fadeIn(0.15) }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⚠️</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#fb923c' }}>{contratsExpirants.length} contrat{contratsExpirants.length > 1 ? 's expirent' : ' expire'} bientot</span>
+                </div>
+                <button onClick={fermerAlertes} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {contratsExpirants.map(l => {
+                  const j = joursAvantExpiration(l.contrat_fin)
+                  return (
+                    <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '10px 14px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>{l.nom}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{l.appartement}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="badge" style={{ background: j < 0 ? 'rgba(248,113,113,0.15)' : 'rgba(251,146,60,0.15)', color: j < 0 ? '#f87171' : '#fb923c' }}>
+                          {j < 0 ? 'Expire depuis ' + Math.abs(j) + 'j' : 'Dans ' + j + 'j'}
+                        </span>
+                        <a href={"/locataires/" + l.id} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }}>Voir</a>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stat cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '28px', ...fadeIn(0.2) }}>
+            {statCards.map((s, i) => (
+              <div key={i} className={`stat-card ${s.onClick ? 'clickable' : ''}`} style={{ background: s.bg, ...fadeIn(0.2 + i * 0.05) }} onClick={s.onClick || undefined}>
+                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '500', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: s.color, fontFamily: "'DM Mono', monospace", letterSpacing: '-1px' }}>{s.value}</div>
+                {s.onClick && <div style={{ fontSize: '11px', color: '#334155', marginTop: '6px' }}>Cliquer pour voir →</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* Barre recherche + onglets */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', ...fadeIn(0.35) }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <svg style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input className="input-search" style={{ paddingLeft: '40px' }} placeholder="Rechercher un locataire..." value={recherche} onChange={e => setRecherche(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '4px' }}>
+              {[
+                { id: 'retard', label: 'En retard', count: totalRetard, color: '#f87171' },
+                { id: 'attente', label: 'En attente', count: totalAttente, color: '#fb923c' },
+                { id: 'paye', label: 'Payes', count: totalPaye, color: '#34d399' },
+              ].map(t => (
+                <button key={t.id} className={`tab ${onglet === t.id ? 'active' : 'inactive'}`} onClick={() => setOnglet(t.id)}>
+                  {t.label}
+                  <span style={{ marginLeft: '6px', fontWeight: '700', color: onglet === t.id ? 'rgba(255,255,255,0.8)' : t.color }}>{t.count}</span>
+                </button>
+              ))}
+            </div>
+            <select value={tri} onChange={e => setTri(e.target.value)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 12px', color: '#94a3b8', fontSize: '13px', outline: 'none', cursor: 'pointer' }}>
+              <option value="retard_desc">Retard ↓</option>
+              <option value="nom_asc">Nom A-Z</option>
+              <option value="loyer_desc">Loyer ↓</option>
+            </select>
+          </div>
+
+          {/* Actions groupees attente */}
+          {onglet === 'attente' && enAttente.length > 0 && (
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', ...fadeIn(0.4) }}>
+              <span style={{ fontSize: '13px', color: '#64748b', flex: 1 }}>{enAttente.length} locataires en attente</span>
+              <button className="btn btn-green" onClick={toutMarquerPaye}>Tout marquer paye</button>
+              <button className="btn btn-red" onClick={toutMarquerEnRetard}>Tout en retard</button>
+            </div>
+          )}
+
+          {/* Liste locataires */}
+          <div style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', ...fadeIn(0.4) }}>
+            {listeActive.length === 0 && (
+              <div style={{ padding: '48px', textAlign: 'center', color: '#334155' }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
+                  {onglet === 'retard' ? '✅' : onglet === 'paye' ? '⏳' : '📋'}
+                </div>
+                <div style={{ fontSize: '14px' }}>
+                  {onglet === 'retard' ? 'Aucun loyer en retard' : onglet === 'paye' ? 'Aucun paiement ce mois-ci' : 'Aucun locataire en attente'}
+                </div>
+              </div>
+            )}
+
+            {onglet === 'retard' && enRetard.map((l, i) => {
+              const j = joursEnRetard(l.date_retard)
+              const badgeColor = j >= 20 ? '#f87171' : j >= 10 ? '#fb923c' : j >= 5 ? '#fbbf24' : '#94a3b8'
+              const badgeBg = j >= 20 ? 'rgba(248,113,113,0.12)' : j >= 10 ? 'rgba(251,146,60,0.12)' : j >= 5 ? 'rgba(251,191,36,0.12)' : 'rgba(148,163,184,0.1)'
+              return (
+                <div key={l.id} className="row-item animate-in" style={{ animationDelay: i * 0.04 + 's', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(248,113,113,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '15px', fontWeight: '700', color: '#f87171' }}>
+                      {l.nom.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.nom}</div>
+                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{l.derniere_relance ? ` · Relance il y a ${joursDepuis(l.derniere_relance)}j` : ''}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                    <span className="badge" style={{ background: badgeBg, color: badgeColor }}>{j}j de retard</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
+                    <button className="btn btn-blue" onClick={() => demanderRelance(l)}>Relance</button>
+                    <button className="btn btn-green" onClick={() => marquerPaye(l.id, l.nom)}>Paye</button>
+                    <a href={"/locataires/" + l.id} className="btn btn-ghost">Voir</a>
+                  </div>
+                </div>
+              )
+            })}
+
+            {onglet === 'attente' && enAttente.map((l, i) => (
+              <div key={l.id} className="row-item animate-in" style={{ animationDelay: i * 0.04 + 's', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
+                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(251,146,60,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '15px', fontWeight: '700', color: '#fb923c' }}>
+                    {l.nom.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</div>
+                    <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
+                  <button className="btn btn-green" onClick={() => marquerPaye(l.id, l.nom)}>Paye</button>
+                  <button className="btn btn-red" onClick={() => marquerEnRetard(l.id)}>En retard</button>
+                  <a href={"/locataires/" + l.id} className="btn btn-ghost">Voir</a>
+                </div>
+              </div>
+            ))}
+
+            {onglet === 'paye' && payes.map((l, i) => {
+              const jp = prochainPaiement(l.loyer_echeance)
+              const jpColor = jp <= 3 ? '#fb923c' : jp <= 7 ? '#fbbf24' : '#34d399'
+              return (
+                <div key={l.id} className="row-item animate-in" style={{ animationDelay: i * 0.04 + 's', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '15px', fontWeight: '700', color: '#34d399' }}>
+                      {l.nom.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</div>
+                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{jp ? ` · Prochain paiement dans ${jp}j` : ''}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {jp && <span className="badge" style={{ background: 'rgba(52,211,153,0.1)', color: jpColor }}>Dans {jp}j</span>}
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
+                    <span style={{ fontSize: '12px', color: '#34d399', fontWeight: '600' }}>✓ Paye</span>
+                    <button className="btn btn-purple" onClick={() => genererQuittance(l)}>Quittance</button>
+                    <button className="btn btn-ghost" onClick={() => marquerEnRetard(l.id)}>Annuler</button>
+                    <a href={"/locataires/" + l.id} className="btn btn-ghost">Voir</a>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
+      {confirmation && (
+        <div className="modal-bg">
+          <div className="modal">
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '8px' }}>Confirmer l'envoi</h2>
+            <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '4px' }}>Envoyer <span style={{ color: '#60a5fa', fontWeight: '600' }}>"{confirmation.template.nom}"</span> à <span style={{ color: '#f1f5f9', fontWeight: '600' }}>{confirmation.locataire.nom}</span></p>
+            <p style={{ color: '#475569', fontSize: '13px', marginBottom: '20px' }}>{confirmation.jours}j de retard · {confirmation.locataire.appartement}</p>
+            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '14px', marginBottom: '20px' }}>
+              <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: '500' }}>Sujet : {confirmation.template.sujet}</p>
+              <p style={{ fontSize: '12px', color: '#475569' }}>{confirmation.template.corps.substring(0, 100)}...</p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '12px' }} onClick={() => setConfirmation(null)}>Annuler</button>
+              <button className="btn btn-blue" style={{ flex: 1, justifyContent: 'center', padding: '12px' }} onClick={confirmerRelance}>Envoyer</button>
             </div>
           </div>
         </div>
       )}
 
       {confirmReinit && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Nouveau mois</h2>
-            <p className="text-gray-600 mb-2">Vous allez remettre <span className="font-semibold text-orange-600">{totalPaye} locataires</span> de "Payé" à "En attente".</p>
-            <p className="text-sm text-gray-400 mb-5">Cette action est irréversible. À faire en début de mois uniquement.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmReinit(false)} className="flex-1 bg-gray-100 text-gray-600 px-4 py-3 rounded-xl font-medium hover:bg-gray-200">Annuler</button>
-              <button onClick={reinitialiserMois} className="flex-1 bg-orange-500 text-white px-4 py-3 rounded-xl font-medium hover:bg-orange-600">Confirmer ↺</button>
+        <div className="modal-bg">
+          <div className="modal">
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '8px' }}>Nouveau mois</h2>
+            <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '4px' }}>Remettre <span style={{ color: '#fb923c', fontWeight: '600' }}>{totalPaye} locataires</span> en attente.</p>
+            <p style={{ color: '#475569', fontSize: '13px', marginBottom: '20px' }}>Cette action est irreversible.</p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '12px' }} onClick={() => setConfirmReinit(false)}>Annuler</button>
+              <button className="btn" style={{ flex: 1, justifyContent: 'center', padding: '12px', background: 'rgba(251,146,60,0.15)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.2)' }} onClick={reinitialiserMois}>Confirmer</button>
             </div>
           </div>
         </div>
       )}
 
       {showExport && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">Exporter</h2>
-            <p className="text-sm text-gray-500 mb-5">Choisissez ce que vous voulez exporter et dans quel format.</p>
-            <div className="flex flex-col gap-3">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Export Excel (CSV)</p>
-              <button onClick={() => exporterCSV(locataires.filter(l => l.statut === 'en_retard'), 'loyers_en_retard')} className="flex items-center gap-3 px-4 py-3 bg-red-50 rounded-xl hover:bg-red-100 text-left">
-                <span className="text-lg">📊</span>
-                <div><p className="font-medium text-gray-900 text-sm">Loyers en retard</p><p className="text-xs text-gray-400">{totalRetard} locataires</p></div>
-              </button>
-              <button onClick={() => exporterCSV(locataires, 'tous_les_locataires')} className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 text-left">
-                <span className="text-lg">📊</span>
-                <div><p className="font-medium text-gray-900 text-sm">Tous les locataires</p><p className="text-xs text-gray-400">{locataires.length} locataires</p></div>
-              </button>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mt-2">Export PDF</p>
-              <button onClick={() => exporterPDF(locataires.filter(l => l.statut === 'en_retard'), 'Loyers en retard')} className="flex items-center gap-3 px-4 py-3 bg-red-50 rounded-xl hover:bg-red-100 text-left">
-                <span className="text-lg">📄</span>
-                <div><p className="font-medium text-gray-900 text-sm">Loyers en retard</p><p className="text-xs text-gray-400">{totalRetard} locataires</p></div>
-              </button>
-              <button onClick={() => exporterPDF(locataires, 'Tous les locataires')} className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 text-left">
-                <span className="text-lg">📄</span>
-                <div><p className="font-medium text-gray-900 text-sm">Tous les locataires</p><p className="text-xs text-gray-400">{locataires.length} locataires</p></div>
+        <div className="modal-bg">
+          <div className="modal">
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '4px' }}>Exporter</h2>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Telechargez vos donnees.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', padding: '14px 16px', borderRadius: '12px' }} onClick={exporterCSV}>
+                <span style={{ fontSize: '18px' }}>📊</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>Export Excel (CSV)</div>
+                  <div style={{ fontSize: '12px', color: '#475569' }}>{locataires.length} locataires</div>
+                </div>
               </button>
             </div>
-            <button onClick={() => setShowExport(false)} className="mt-4 w-full bg-gray-100 text-gray-600 px-4 py-3 rounded-xl font-medium hover:bg-gray-200">Fermer</button>
+            <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '16px' }} onClick={() => setShowExport(false)}>Fermer</button>
           </div>
         </div>
       )}
-
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Logo />
-          {nomAgence && <><span className="text-gray-300">|</span><span className="text-sm font-medium text-gray-600">{nomAgence}</span></>}
-        </div>
-        <div className="flex items-center gap-3">
-          <a href="/parametres" className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100">⚙ Paramètres</a>
-          <a href="/stats" className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100">📊 Statistiques</a>
-          <button onClick={() => setShowExport(true)} className="bg-gray-100 text-gray-700 text-sm px-4 py-2 rounded-lg hover:bg-gray-200">↓ Exporter</button>
-          <button onClick={() => setConfirmReinit(true)} className="bg-orange-100 text-orange-700 text-sm px-4 py-2 rounded-lg hover:bg-orange-200">↺ Nouveau mois</button>
-          <a href="/import" className="bg-gray-100 text-gray-700 text-sm px-4 py-2 rounded-lg hover:bg-gray-200">↑ Importer CSV</a>
-          <a href="/locataires/nouveau" className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700">+ Nouveau locataire</a>
-          <button onClick={deconnexion} className="text-sm text-gray-400 hover:text-gray-600 px-3 py-2 rounded-lg hover:bg-gray-100">Déconnexion</button>
-        </div>
-      </div>
-
-      <div className="p-6 grid grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-5 border"><p className="text-sm text-gray-500">Total locataires</p><p className="text-3xl font-bold text-gray-900 mt-1">{locataires.length}</p></div>
-        <div className="bg-white rounded-xl p-5 border cursor-pointer" onClick={() => setOnglet('retard')}><p className="text-sm text-gray-500">Loyers en retard</p><p className="text-3xl font-bold text-red-500 mt-1">{totalRetard}</p></div>
-        <div className="bg-white rounded-xl p-5 border cursor-pointer" onClick={() => setOnglet('paye')}><p className="text-sm text-gray-500">Loyers payés</p><p className="text-3xl font-bold text-green-500 mt-1">{totalPaye}</p></div>
-        <div className="bg-white rounded-xl p-5 border cursor-pointer" onClick={() => setOnglet('attente')}><p className="text-sm text-gray-500">En attente</p><p className="text-3xl font-bold text-orange-400 mt-1">{totalAttente}</p></div>
-      </div>
-
-      <div className="px-6 mb-4 flex gap-3">
-        <input type="text" placeholder="Rechercher par nom, appartement ou email..." value={recherche} onChange={e => setRecherche(e.target.value)} className="flex-1 bg-white border rounded-xl px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <button onClick={() => setShowFiltres(!showFiltres)} className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium ${filtresActifs ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-          ⚡ Filtres {filtresActifs && '•'}
-        </button>
-      </div>
-
-      {showFiltres && (
-        <div className="px-6 mb-4">
-          <div className="bg-white rounded-xl border p-4 flex flex-wrap gap-4 items-end">
-            <div><label className="text-xs font-medium text-gray-500 block mb-1">Loyer minimum (€)</label><input type="number" placeholder="Ex: 500" value={filtreMinLoyer} onChange={e => setFiltreMinLoyer(e.target.value)} className="border rounded-lg px-3 py-2 text-sm w-32" /></div>
-            <div><label className="text-xs font-medium text-gray-500 block mb-1">Loyer maximum (€)</label><input type="number" placeholder="Ex: 1200" value={filtreMaxLoyer} onChange={e => setFiltreMaxLoyer(e.target.value)} className="border rounded-lg px-3 py-2 text-sm w-32" /></div>
-            <div><label className="text-xs font-medium text-gray-500 block mb-1">Jours de retard min</label><input type="number" placeholder="Ex: 10" value={filtreMinJours} onChange={e => setFiltreMinJours(e.target.value)} className="border rounded-lg px-3 py-2 text-sm w-32" /></div>
-            <div>
-              <label className="text-xs font-medium text-gray-500 block mb-1">Trier par</label>
-              <select value={tri} onChange={e => setTri(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
-                <option value="retard_desc">Jours de retard ↓</option>
-                <option value="retard_asc">Jours de retard ↑</option>
-                <option value="nom_asc">Nom A → Z</option>
-                <option value="nom_desc">Nom Z → A</option>
-                <option value="loyer_desc">Loyer ↓</option>
-                <option value="loyer_asc">Loyer ↑</option>
-              </select>
-            </div>
-            {filtresActifs && <button onClick={resetFiltres} className="text-sm text-red-500 hover:text-red-600 font-medium px-3 py-2">✕ Réinitialiser</button>}
-          </div>
-        </div>
-      )}
-
-      <div className="px-6 mb-4">
-        <div className="flex gap-2 bg-white rounded-xl border p-1 w-fit">
-          {onglets.map(o => (
-            <button key={o.id} onClick={() => setOnglet(o.id)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${onglet === o.id ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
-              {o.label}<span className={`ml-2 font-bold ${onglet === o.id ? 'text-white' : o.color}`}>{o.count}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-6 mb-6">
-        <div className="bg-white rounded-xl border divide-y">
-          {onglet === 'retard' && enRetard.length === 0 && <p className="px-5 py-4 text-gray-500 text-sm">{recherche || filtresActifs ? 'Aucun résultat.' : 'Aucun loyer en retard 🎉'}</p>}
-          {onglet === 'attente' && enAttente.length === 0 && <p className="px-5 py-4 text-gray-500 text-sm">{recherche || filtresActifs ? 'Aucun résultat.' : 'Aucun locataire en attente.'}</p>}
-          {onglet === 'paye' && payes.length === 0 && <p className="px-5 py-4 text-gray-500 text-sm">{recherche || filtresActifs ? 'Aucun résultat.' : 'Aucun paiement reçu ce mois-ci.'}</p>}
-
-          {onglet === 'attente' && enAttente.length > 0 && (
-            <div className="flex items-center gap-3 px-5 py-3 bg-gray-50">
-              <p className="text-sm text-gray-500 flex-1">Actions groupées · {enAttente.length} locataires</p>
-              <button onClick={toutMarquerPaye} className="bg-green-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-green-700">✓ Tout marquer payé</button>
-              <button onClick={toutMarquerEnRetard} className="bg-red-500 text-white text-sm px-3 py-2 rounded-lg hover:bg-red-600">✕ Tout en retard</button>
-            </div>
-          )}
-
-          {onglet === 'retard' && enRetard.map((l) => (
-            <div key={l.id} className="flex items-center justify-between px-5 py-4">
-              <div>
-                <p className="font-medium text-gray-900">{l.nom}</p>
-                <p className="text-sm text-gray-500">{l.appartement}</p>
-                {l.derniere_relance && <p className="text-xs text-gray-400 mt-0.5">Dernière relance il y a {joursDepuis(l.derniere_relance) === 0 ? "moins d'1 jour" : joursDepuis(l.derniere_relance) + 'j'}</p>}
-              </div>
-              <div className="flex items-center gap-2">
-                {badgeRetard(joursEnRetard(l.date_retard))}
-                <span className="font-semibold text-gray-900">{l.loyer_montant}€</span>
-                <button onClick={() => demanderRelance(l)} className="bg-blue-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-blue-700">Envoyer relance</button>
-                <button onClick={() => marquerPaye(l.id)} className="bg-green-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-green-700">Marquer payé</button>
-                <a href={"/locataires/" + l.id} className="bg-gray-100 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-200">Voir</a>
-              </div>
-            </div>
-          ))}
-
-          {onglet === 'attente' && enAttente.map((l) => (
-            <div key={l.id} className="flex items-center justify-between px-5 py-4">
-              <div>
-                <p className="font-medium text-gray-900">{l.nom}</p>
-                <p className="text-sm text-gray-500">{l.appartement}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-gray-900">{l.loyer_montant}€</span>
-                <button onClick={() => marquerPaye(l.id)} className="bg-green-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-green-700">Marquer payé</button>
-                <button onClick={() => marquerEnRetard(l.id)} className="bg-red-500 text-white text-sm px-3 py-2 rounded-lg hover:bg-red-600">En retard</button>
-                <a href={"/locataires/" + l.id} className="bg-gray-100 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-200">Voir</a>
-              </div>
-            </div>
-          ))}
-
-          {onglet === 'paye' && payes.map((l) => (
-            <div key={l.id} className="flex items-center justify-between px-5 py-4">
-              <div>
-                <p className="font-medium text-gray-900">{l.nom}</p>
-                <p className="text-sm text-gray-500">{l.appartement}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Échéance le {l.loyer_echeance} du mois (dans {prochainPaiement(l.loyer_echeance)} jours)</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {l.loyer_echeance && badgeProchainPaiement(prochainPaiement(l.loyer_echeance))}
-                <span className="font-semibold text-gray-900">{l.loyer_montant}€</span>
-                <span className="text-green-600 text-sm font-medium">✓ Payé</span>
-                <button onClick={() => marquerEnRetard(l.id)} className="bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded-lg hover:bg-gray-300">Annuler</button>
-                <a href={"/locataires/" + l.id} className="bg-gray-100 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-200">Voir</a>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }
