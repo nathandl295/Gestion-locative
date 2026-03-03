@@ -97,12 +97,19 @@ export async function GET(request) {
 
     await supabase
       .from('locataires')
-      .update({ derniere_relance_auto: new Date().toISOString() })
+      .update({ 
+        derniere_relance_auto: new Date().toISOString(),
+        derniere_relance: new Date().toISOString()
+      })
       .eq('id', locataire.id)
 
     await supabase
       .from('relances')
-      .insert([{ locataire_id: locataire.id, template_nom: template.nom }])
+      .insert([{ 
+        locataire_id: locataire.id, 
+        template_nom: template.nom,
+        envoye_le: new Date().toISOString()
+      }])
 
     envoyes++
   }
