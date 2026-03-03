@@ -36,9 +36,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [tri, setTri] = useState('retard_desc')
   const [showExport, setShowExport] = useState(false)
-  const [showAlertes, setShowAlertes] = useState(false)
-  const [alertesDismissed, setAlertesDismissed] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [bandeauOuvert, setBandeauOuvert] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -52,19 +51,7 @@ export default function Dashboard() {
       setTimeout(() => setMounted(true), 50)
     }
     init()
-    const dismissed = localStorage.getItem('alertes_dismissed')
-    if (!dismissed) setShowAlertes(true)
-    else setAlertesDismissed(true)
   }, [])
-
-  function fermerAlertes() {
-    setShowAlertes(false); setAlertesDismissed(true)
-    localStorage.setItem('alertes_dismissed', '1')
-  }
-  function rouvriAlertes() {
-    setShowAlertes(true); setAlertesDismissed(false)
-    localStorage.removeItem('alertes_dismissed')
-  }
 
   async function deconnexion() { await supabase.auth.signOut(); router.push('/login') }
 
@@ -128,13 +115,13 @@ export default function Dashboard() {
     const dateAuj = now.toLocaleDateString('fr-FR')
     const debut = '01/' + String(now.getMonth() + 1).padStart(2, '0') + '/' + now.getFullYear()
     const fin = new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('fr-FR')
-    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Quittance - ${locataire.nom}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;color:#1a1a1a;padding:60px;max-width:800px;margin:0 auto}.h{border-bottom:3px solid #2563eb;padding-bottom:24px;margin-bottom:32px;display:flex;justify-content:space-between}.logo{font-size:26px;font-weight:bold;color:#2563eb}.ib{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:20px}.ir{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}.ir:last-child{border-bottom:none}.mb{background:#2563eb;color:white;border-radius:10px;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}.mv{font-size:32px;font-weight:bold}.dec{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:20px 0;font-size:13px;line-height:1.7;color:#166534}.sl{width:200px;border-bottom:2px solid #1a1a1a;height:60px;margin-bottom:8px}.ft{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af}</style></head><body><div class="h"><div><div class="logo">${nomAgence || 'GestImmo'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px">Gestion locative</div></div><div style="text-align:right"><div style="font-size:20px;font-weight:bold">Quittance de loyer</div><div style="font-size:14px;color:#6b7280;margin-top:4px">${moisC}</div></div></div><div class="ib"><div class="ir"><span style="color:#6b7280">Nom</span><strong>${locataire.nom}</strong></div><div class="ir"><span style="color:#6b7280">Logement</span><strong>${locataire.appartement}</strong></div>${locataire.email ? `<div class="ir"><span style="color:#6b7280">Email</span><strong>${locataire.email}</strong></div>` : ''}</div><div class="ib"><div class="ir"><span style="color:#6b7280">Du</span><strong>${debut}</strong></div><div class="ir"><span style="color:#6b7280">Au</span><strong>${fin}</strong></div><div class="ir"><span style="color:#6b7280">Emis le</span><strong>${dateAuj}</strong></div></div><div class="mb"><span>Loyer mensuel charges comprises</span><span class="mv">${locataire.loyer_montant} €</span></div><div class="dec">Je soussigne(e), <strong>${nomAgence || 'le gestionnaire'}</strong>, declare avoir recu de <strong>${locataire.nom}</strong>, locataire du logement situe au <strong>${locataire.appartement}</strong>, la somme de <strong>${locataire.loyer_montant} euros</strong> au titre du loyer du mois de <strong>${moisC}</strong>. Cette quittance annule tous les recus precedents.</div><div style="display:flex;justify-content:flex-end;margin-top:40px"><div style="text-align:center"><div class="sl"></div><div style="font-size:12px;color:#6b7280">Signature du gestionnaire</div></div></div><div class="ft">Document genere par GestImmo &bull; ${dateAuj}</div><script>window.onload=function(){window.print()}<\/script></body></html>`
+    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Quittance - ${locataire.nom}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;color:#1a1a1a;padding:60px;max-width:800px;margin:0 auto}.h{border-bottom:3px solid #2563eb;padding-bottom:24px;margin-bottom:32px;display:flex;justify-content:space-between}.logo{font-size:26px;font-weight:bold;color:#2563eb}.ib{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:20px}.ir{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}.ir:last-child{border-bottom:none}.mb{background:#2563eb;color:white;border-radius:10px;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}.mv{font-size:32px;font-weight:bold}.dec{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:20px 0;font-size:13px;line-height:1.7;color:#166534}.sl{width:200px;border-bottom:2px solid #1a1a1a;height:60px;margin-bottom:8px}.ft{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af}</style></head><body><div class="h"><div><div class="logo">${nomAgence || 'GestImmo'}</div></div><div style="text-align:right"><div style="font-size:20px;font-weight:bold">Quittance de loyer</div><div style="font-size:14px;color:#6b7280;margin-top:4px">${moisC}</div></div></div><div class="ib"><div class="ir"><span style="color:#6b7280">Nom</span><strong>${locataire.nom}</strong></div><div class="ir"><span style="color:#6b7280">Logement</span><strong>${locataire.appartement}</strong></div></div><div class="ib"><div class="ir"><span style="color:#6b7280">Du</span><strong>${debut}</strong></div><div class="ir"><span style="color:#6b7280">Au</span><strong>${fin}</strong></div><div class="ir"><span style="color:#6b7280">Emis le</span><strong>${dateAuj}</strong></div></div><div class="mb"><span>Loyer mensuel</span><span class="mv">${locataire.loyer_montant} €</span></div><div class="dec">Je soussigne(e), <strong>${nomAgence || 'le gestionnaire'}</strong>, declare avoir recu de <strong>${locataire.nom}</strong> la somme de <strong>${locataire.loyer_montant} euros</strong> au titre du loyer du mois de <strong>${moisC}</strong>.</div><div style="display:flex;justify-content:flex-end;margin-top:40px"><div style="text-align:center"><div class="sl"></div><div style="font-size:12px;color:#6b7280">Signature</div></div></div><div class="ft">Document genere par GestImmo &bull; ${dateAuj}</div><script>window.onload=function(){window.print()}<\/script></body></html>`
     const blob = new Blob([html], { type: 'text/html' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = 'quittance_' + locataire.nom.replace(/ /g, '_') + '_' + dateAuj.replace(/\//g, '-') + '.html'
+    a.href = url; a.download = 'quittance_' + locataire.nom.replace(/ /g, '_') + '.html'
     a.click(); URL.revokeObjectURL(url)
-    toast('Quittance generee pour ' + locataire.nom, 'success')
+    toast('Quittance generee', 'success')
   }
 
   function exporterCSV() {
@@ -143,9 +130,7 @@ export default function Dashboard() {
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = 'locataires_' + new Date().toLocaleDateString('fr-FR').replace(/\//g, '-') + '.csv'
-    a.click(); URL.revokeObjectURL(url)
+    const a = document.createElement('a'); a.href = url; a.download = 'locataires.csv'; a.click(); URL.revokeObjectURL(url)
     setShowExport(false); toast('Export CSV telecharge', 'success')
   }
 
@@ -169,49 +154,16 @@ export default function Dashboard() {
   const totalLoyers = locataires.reduce((acc, l) => acc + (parseFloat(l.loyer_montant) || 0), 0)
   const contratsExpirants = locataires.filter(l => { const j = joursAvantExpiration(l.contrat_fin); return j !== null && j <= 90 })
 
-  const listeActive = onglet === 'retard' ? enRetard : onglet === 'paye' ? payes : enAttente
-
-  if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-      <style>{`@keyframes pulse-bar { 0%,100%{transform:scaleY(0.4)} 50%{transform:scaleY(1)} }`}</style>
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-        {[0, 0.15, 0.3].map((d, i) => (
-          <div key={i} style={{ width: '6px', height: '32px', background: '#3b82f6', borderRadius: '3px', animation: `pulse-bar 0.9s ease-in-out ${d}s infinite` }} />
-        ))}
-      </div>
-      <p style={{ color: '#6b7280', fontSize: '13px', letterSpacing: '0.05em' }}>Chargement...</p>
-    </div>
-  )
-
-  const fadeIn = (delay = 0) => ({
-    opacity: mounted ? 1 : 0,
-    transform: mounted ? 'translateY(0)' : 'translateY(16px)',
-    transition: `opacity 0.5s ease ${delay}s, transform 0.5s ease ${delay}s`
-  })
-
-  const statCards = [
-    { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', accent: '#334155', onClick: null },
-    { label: 'En retard', value: totalRetard, color: '#f87171', bg: 'rgba(248,113,113,0.08)', accent: '#7f1d1d', onClick: () => setOnglet('retard') },
-    { label: 'Payes', value: totalPaye, color: '#34d399', bg: 'rgba(52,211,153,0.08)', accent: '#064e3b', onClick: () => setOnglet('paye') },
-    { label: 'En attente', value: totalAttente, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', accent: '#7c2d12', onClick: () => setOnglet('attente') },
-    { label: 'Loyers / mois', value: totalLoyers.toLocaleString('fr-FR') + '€', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', accent: '#4c1d95', onClick: null },
-  ]
-
-  // Recommandations IA calculées localement
   function getRecommandations() {
     const recs = []
-    enRetard.forEach(l => {
+    locataires.filter(l => l.statut === 'en_retard').forEach(l => {
       const j = joursEnRetard(l.date_retard)
       const derniereRelance = joursDepuis(l.derniere_relance)
-      if (j >= 21) {
-        recs.push({ locataire: l, jours: j, message: `Mise en demeure recommandée — ${j}j de retard`, action: 'Niveau 3', couleur: '#f87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.2)', icon: '🚨' })
-      } else if (j >= 8 && (derniereRelance === null || derniereRelance >= 7)) {
-        recs.push({ locataire: l, jours: j, message: `Relance ferme recommandée — ${j}j de retard${derniereRelance ? ` · dernière relance il y a ${derniereRelance}j` : ' · aucune relance envoyée'}`, action: 'Niveau 2', couleur: '#fb923c', bg: 'rgba(251,146,60,0.08)', border: 'rgba(251,146,60,0.2)', icon: '⚠️' })
-      } else if (j >= 1 && derniereRelance === null) {
-        recs.push({ locataire: l, jours: j, message: `Premier rappel à envoyer — ${j}j de retard, aucune relance envoyée`, action: 'Niveau 1', couleur: '#fbbf24', bg: 'rgba(251,191,36,0.08)', border: 'rgba(251,191,36,0.2)', icon: '💬' })
-      }
+      if (j >= 21) recs.push({ locataire: l, jours: j, message: `Mise en demeure — ${j}j de retard`, action: 'Niveau 3', couleur: '#f87171', icon: '🚨' })
+      else if (j >= 8 && (derniereRelance === null || derniereRelance >= 7)) recs.push({ locataire: l, jours: j, message: `Relance ferme — ${j}j de retard`, action: 'Niveau 2', couleur: '#fb923c', icon: '⚠️' })
+      else if (j >= 1 && derniereRelance === null) recs.push({ locataire: l, jours: j, message: `Premier rappel — ${j}j, aucune relance`, action: 'Niveau 1', couleur: '#fbbf24', icon: '💬' })
     })
-    return recs.sort((a, b) => b.jours - a.jours).slice(0, 4)
+    return recs.sort((a, b) => b.jours - a.jours).slice(0, 5)
   }
 
   function niveauRelance(l) {
@@ -222,6 +174,31 @@ export default function Dashboard() {
   }
 
   const recommandations = getRecommandations()
+  const totalAlertes = recommandations.length + contratsExpirants.length
+  const listeActive = onglet === 'retard' ? enRetard : onglet === 'paye' ? payes : enAttente
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+      <style>{`@keyframes pulse-bar { 0%,100%{transform:scaleY(0.4)} 50%{transform:scaleY(1)} }`}</style>
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        {[0, 0.15, 0.3].map((d, i) => <div key={i} style={{ width: '6px', height: '32px', background: '#3b82f6', borderRadius: '3px', animation: `pulse-bar 0.9s ease-in-out ${d}s infinite` }} />)}
+      </div>
+    </div>
+  )
+
+  const fadeIn = (delay = 0) => ({
+    opacity: mounted ? 1 : 0,
+    transform: mounted ? 'translateY(0)' : 'translateY(16px)',
+    transition: `opacity 0.5s ease ${delay}s, transform 0.5s ease ${delay}s`
+  })
+
+  const statCards = [
+    { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', onClick: null },
+    { label: 'En retard', value: totalRetard, color: '#f87171', bg: 'rgba(248,113,113,0.08)', onClick: () => setOnglet('retard') },
+    { label: 'Payes', value: totalPaye, color: '#34d399', bg: 'rgba(52,211,153,0.08)', onClick: () => setOnglet('paye') },
+    { label: 'En attente', value: totalAttente, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', onClick: () => setOnglet('attente') },
+    { label: 'Loyers / mois', value: totalLoyers.toLocaleString('fr-FR') + '€', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', onClick: null },
+  ]
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
@@ -232,17 +209,19 @@ export default function Dashboard() {
         .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
         .nav-link:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
         .nav-link.active { background: rgba(59,130,246,0.15); color: #60a5fa; }
-        .stat-card { border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.06); transition: all 0.2s; position: relative; overflow: hidden; }
+        .nav-link.ai-btn { background: linear-gradient(135deg, rgba(37,99,235,0.15), rgba(124,58,237,0.15)); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.2); }
+        .nav-link.ai-btn:hover { background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(124,58,237,0.25)); color: #c4b5fd; }
+        .stat-card { border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.06); transition: all 0.2s; }
         .stat-card.clickable { cursor: pointer; } .stat-card.clickable:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); }
         .row-item { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
         .row-item:last-child { border-bottom: none; } .row-item:hover { background: rgba(255,255,255,0.03); }
         .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.15s; text-decoration: none; }
         .btn:hover { transform: translateY(-1px); } .btn:active { transform: translateY(0); }
         .btn-blue { background: #2563eb; color: white; } .btn-blue:hover { background: #1d4ed8; }
-        .btn-green { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.2); } .btn-green:hover { background: rgba(52,211,153,0.25); }
-        .btn-red { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.2); } .btn-red:hover { background: rgba(248,113,113,0.25); }
-        .btn-ghost { background: rgba(255,255,255,0.06); color: #94a3b8; } .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; }
-        .btn-purple { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); } .btn-purple:hover { background: rgba(167,139,250,0.25); }
+        .btn-green { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.2); }
+        .btn-red { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+        .btn-ghost { background: rgba(255,255,255,0.06); color: #94a3b8; }
+        .btn-purple { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); }
         .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
         .tab { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.2s; }
         .tab.active { background: #2563eb; color: white; } .tab.inactive { background: transparent; color: #64748b; } .tab.inactive:hover { color: #94a3b8; background: rgba(255,255,255,0.04); }
@@ -252,19 +231,16 @@ export default function Dashboard() {
         .modal { background: #1a1a24; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 28px; max-width: 440px; width: 100%; }
         @keyframes fadeInUp { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform: translateY(0); } }
         .animate-in { animation: fadeInUp 0.4s ease forwards; }
+        @keyframes slideDown { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
+        .slide-down { animation: slideDown 0.2s ease forwards; }
       `}</style>
 
       <div style={{ display: 'flex', minHeight: '100vh' }}>
 
         {/* Sidebar */}
         <div style={{ width: '240px', flexShrink: 0, background: '#13131a', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', ...fadeIn(0) }}>
-          {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '16px' }}>
-            <svg width="28" height="28" viewBox="0 0 60 60">
-              <rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/>
-              <rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/>
-              <rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/>
-            </svg>
+            <svg width="28" height="28" viewBox="0 0 60 60"><rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/><rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/><rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/></svg>
             <div>
               <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.3px' }}>GestImmo</div>
               {nomAgence && <div style={{ fontSize: '11px', color: '#475569', marginTop: '1px' }}>{nomAgence}</div>}
@@ -272,7 +248,6 @@ export default function Dashboard() {
           </div>
 
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155', letterSpacing: '0.08em', padding: '0 14px', marginBottom: '4px', textTransform: 'uppercase' }}>Navigation</div>
-
           <button className="nav-link active">
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             Dashboard
@@ -290,10 +265,19 @@ export default function Dashboard() {
             Nouveau locataire
           </a>
 
+          {/* Bouton IA */}
+          <div style={{ margin: '8px 0' }}>
+            <a href="/agent" className="nav-link ai-btn" style={{ position: 'relative' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/></svg>
+              Assistant IA
+              {recommandations.length > 0 && (
+                <span style={{ marginLeft: 'auto', background: '#7c3aed', color: 'white', borderRadius: '20px', padding: '1px 7px', fontSize: '10px', fontWeight: '700' }}>{recommandations.length}</span>
+              )}
+            </a>
+          </div>
+
           <div style={{ flex: 1 }} />
-
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155', letterSpacing: '0.08em', padding: '0 14px', marginBottom: '4px', textTransform: 'uppercase' }}>Parametres</div>
-
           <a href="/membres" className="nav-link">
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             Équipe
@@ -310,30 +294,23 @@ export default function Dashboard() {
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Exporter
           </button>
-
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '8px 0' }} />
-
           <button className="nav-link" onClick={deconnexion} style={{ color: '#f87171' }}>
             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Deconnexion
           </button>
         </div>
 
-        {/* Main content */}
+        {/* Main */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
 
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px', ...fadeIn(0.1) }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', ...fadeIn(0.1) }}>
             <div>
               <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Dashboard</h1>
               <p style={{ fontSize: '13px', color: '#475569', marginTop: '3px' }}>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
             </div>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              {contratsExpirants.length > 0 && alertesDismissed && (
-                <button className="btn btn-ghost" onClick={rouvriAlertes} title="Contrats expirants" style={{ color: '#fb923c', background: 'rgba(251,146,60,0.1)' }}>
-                  ⚠️ {contratsExpirants.length}
-                </button>
-              )}
               <button className="btn btn-ghost" onClick={() => setConfirmReinit(true)}>
                 <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 Nouveau mois
@@ -345,42 +322,81 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Alertes contrats */}
-          {contratsExpirants.length > 0 && showAlertes && (
-            <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '14px', padding: '16px 20px', marginBottom: '24px', ...fadeIn(0.15) }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>⚠️</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#fb923c' }}>{contratsExpirants.length} contrat{contratsExpirants.length > 1 ? 's expirent' : ' expire'} bientot</span>
+          {/* Bandeau collapsible alertes + IA */}
+          {totalAlertes > 0 && (
+            <div style={{ marginBottom: '24px', ...fadeIn(0.15) }}>
+              <button onClick={() => setBandeauOuvert(o => !o)} style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: bandeauOuvert ? '14px 14px 0 0' : '14px', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                  {recommandations.length > 0 && (
+                    <span style={{ background: 'rgba(124,58,237,0.15)', color: '#a5b4fc', borderRadius: '20px', padding: '3px 10px', fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      🤖 {recommandations.length} action{recommandations.length > 1 ? 's' : ''} IA
+                    </span>
+                  )}
+                  {contratsExpirants.length > 0 && (
+                    <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fb923c', borderRadius: '20px', padding: '3px 10px', fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      ⚠️ {contratsExpirants.length} contrat{contratsExpirants.length > 1 ? 's' : ''} expirant{contratsExpirants.length > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </div>
-                <button onClick={fermerAlertes} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>×</button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {contratsExpirants.map(l => {
-                  const j = joursAvantExpiration(l.contrat_fin)
-                  return (
-                    <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '10px 14px' }}>
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>{l.nom}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>{l.appartement}</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span className="badge" style={{ background: j < 0 ? 'rgba(248,113,113,0.15)' : 'rgba(251,146,60,0.15)', color: j < 0 ? '#f87171' : '#fb923c' }}>
-                          {j < 0 ? 'Expire depuis ' + Math.abs(j) + 'j' : 'Dans ' + j + 'j'}
-                        </span>
-                        <a href={"/locataires/" + l.id} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }}>Voir</a>
+                <span style={{ color: '#475569', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: bandeauOuvert ? 'rotate(180deg)' : 'none' }}>▼</span>
+              </button>
+
+              {bandeauOuvert && (
+                <div className="slide-down" style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.08)', borderTop: 'none', borderRadius: '0 0 14px 14px', overflow: 'hidden' }}>
+                  {/* Recommandations IA */}
+                  {recommandations.length > 0 && (
+                    <div style={{ padding: '16px 18px', borderBottom: contratsExpirants.length > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Recommandations IA</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {recommandations.map((rec, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13px' }}>{rec.icon}</span>
+                              <span style={{ fontSize: '13px', fontWeight: '600', color: rec.couleur }}>{rec.locataire.nom}</span>
+                              <span style={{ fontSize: '12px', color: '#475569' }}>{rec.message}</span>
+                            </div>
+                            <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => demanderRelance(rec.locataire)}>Envoyer →</button>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
+                  )}
+                  {/* Contrats expirants */}
+                  {contratsExpirants.length > 0 && (
+                    <div style={{ padding: '16px 18px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#fb923c', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Contrats expirants</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {contratsExpirants.map(l => {
+                          const j = joursAvantExpiration(l.contrat_fin)
+                          return (
+                            <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</span>
+                                <span style={{ fontSize: '12px', color: '#475569' }}>{l.appartement}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span className="badge" style={{ background: j < 0 ? 'rgba(248,113,113,0.15)' : 'rgba(251,146,60,0.15)', color: j < 0 ? '#f87171' : '#fb923c' }}>
+                                  {j < 0 ? 'Expiré depuis ' + Math.abs(j) + 'j' : 'Dans ' + j + 'j'}
+                                </span>
+                                <a href={"/locataires/" + l.id} className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '12px' }}>Voir</a>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {/* Stat cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '28px', ...fadeIn(0.2) }}>
             {statCards.map((s, i) => (
-              <div key={i} className={`stat-card ${s.onClick ? 'clickable' : ''}`} style={{ background: s.bg, ...fadeIn(0.2 + i * 0.05) }} onClick={s.onClick || undefined}>
+              <div key={i} className={`stat-card ${s.onClick ? 'clickable' : ''}`} style={{ background: s.bg }} onClick={s.onClick || undefined}>
                 <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '500', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
                 <div style={{ fontSize: '28px', fontWeight: '700', color: s.color, fontFamily: "'DM Mono', monospace", letterSpacing: '-1px' }}>{s.value}</div>
                 {s.onClick && <div style={{ fontSize: '11px', color: '#334155', marginTop: '6px' }}>Cliquer pour voir →</div>}
@@ -388,36 +404,8 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* IA Insights */}
-          {recommandations.length > 0 && (
-            <div style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.06), rgba(124,58,237,0.06))', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '16px', padding: '18px 20px', marginBottom: '24px', ...fadeIn(0.25) }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>🤖</div>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#a5b4fc' }}>Recommandations IA</span>
-                <span style={{ fontSize: '11px', color: '#475569', marginLeft: '4px' }}>{recommandations.length} action{recommandations.length > 1 ? 's' : ''} prioritaire{recommandations.length > 1 ? 's' : ''}</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {recommandations.map((rec, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: rec.bg, border: `1px solid ${rec.border}`, borderRadius: '10px', padding: '10px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: '14px' }}>{rec.icon}</span>
-                      <div style={{ minWidth: 0 }}>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: rec.couleur }}>{rec.locataire.nom}</span>
-                        <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '8px' }}>{rec.message}</span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                      <span style={{ fontSize: '11px', fontWeight: '600', color: rec.couleur, background: rec.bg, border: `1px solid ${rec.border}`, borderRadius: '20px', padding: '2px 10px' }}>{rec.action}</span>
-                      <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }} onClick={() => demanderRelance(rec.locataire)}>Envoyer →</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Barre recherche + onglets */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', ...fadeIn(0.35) }}>
+          {/* Recherche + onglets */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', ...fadeIn(0.3) }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <svg style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input className="input-search" style={{ paddingLeft: '40px' }} placeholder="Rechercher un locataire..." value={recherche} onChange={e => setRecherche(e.target.value)} />
@@ -429,8 +417,7 @@ export default function Dashboard() {
                 { id: 'paye', label: 'Payes', count: totalPaye, color: '#34d399' },
               ].map(t => (
                 <button key={t.id} className={`tab ${onglet === t.id ? 'active' : 'inactive'}`} onClick={() => setOnglet(t.id)}>
-                  {t.label}
-                  <span style={{ marginLeft: '6px', fontWeight: '700', color: onglet === t.id ? 'rgba(255,255,255,0.8)' : t.color }}>{t.count}</span>
+                  {t.label} <span style={{ marginLeft: '4px', fontWeight: '700', color: onglet === t.id ? 'rgba(255,255,255,0.8)' : t.color }}>{t.count}</span>
                 </button>
               ))}
             </div>
@@ -441,25 +428,21 @@ export default function Dashboard() {
             </select>
           </div>
 
-          {/* Actions groupees attente */}
+          {/* Actions groupees */}
           {onglet === 'attente' && enAttente.length > 0 && (
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', ...fadeIn(0.4) }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
               <span style={{ fontSize: '13px', color: '#64748b', flex: 1 }}>{enAttente.length} locataires en attente</span>
               <button className="btn btn-green" onClick={toutMarquerPaye}>Tout marquer paye</button>
               <button className="btn btn-red" onClick={toutMarquerEnRetard}>Tout en retard</button>
             </div>
           )}
 
-          {/* Liste locataires */}
-          <div style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', ...fadeIn(0.4) }}>
+          {/* Liste */}
+          <div style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', ...fadeIn(0.35) }}>
             {listeActive.length === 0 && (
               <div style={{ padding: '48px', textAlign: 'center', color: '#334155' }}>
-                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
-                  {onglet === 'retard' ? '✅' : onglet === 'paye' ? '⏳' : '📋'}
-                </div>
-                <div style={{ fontSize: '14px' }}>
-                  {onglet === 'retard' ? 'Aucun loyer en retard' : onglet === 'paye' ? 'Aucun paiement ce mois-ci' : 'Aucun locataire en attente'}
-                </div>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>{onglet === 'retard' ? '✅' : onglet === 'paye' ? '⏳' : '📋'}</div>
+                <div style={{ fontSize: '14px' }}>{onglet === 'retard' ? 'Aucun loyer en retard' : onglet === 'paye' ? 'Aucun paiement ce mois-ci' : 'Aucun locataire en attente'}</div>
               </div>
             )}
 
@@ -476,11 +459,9 @@ export default function Dashboard() {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.nom}</div>
                       <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{l.derniere_relance ? ` · Relance il y a ${joursDepuis(l.derniere_relance)}j` : ''}</div>
-                      <div style={{ marginTop: '4px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '600', color: niveauRelance(l).color, background: niveauRelance(l).bg, borderRadius: '4px', padding: '2px 6px' }}>
-                          🤖 {niveauRelance(l).label}
-                        </span>
-                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: '600', color: niveauRelance(l).color, background: niveauRelance(l).bg, borderRadius: '4px', padding: '2px 6px', marginTop: '4px', display: 'inline-block' }}>
+                        🤖 {niveauRelance(l).label}
+                      </span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
@@ -525,7 +506,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</div>
-                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{jp ? ` · Prochain paiement dans ${jp}j` : ''}</div>
+                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{jp ? ` · Prochain dans ${jp}j` : ''}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -550,10 +531,6 @@ export default function Dashboard() {
             <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '8px' }}>Confirmer l'envoi</h2>
             <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '4px' }}>Envoyer <span style={{ color: '#60a5fa', fontWeight: '600' }}>"{confirmation.template.nom}"</span> à <span style={{ color: '#f1f5f9', fontWeight: '600' }}>{confirmation.locataire.nom}</span></p>
             <p style={{ color: '#475569', fontSize: '13px', marginBottom: '20px' }}>{confirmation.jours}j de retard · {confirmation.locataire.appartement}</p>
-            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '14px', marginBottom: '20px' }}>
-              <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: '500' }}>Sujet : {confirmation.template.sujet}</p>
-              <p style={{ fontSize: '12px', color: '#475569' }}>{confirmation.template.corps.substring(0, 100)}...</p>
-            </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '12px' }} onClick={() => setConfirmation(null)}>Annuler</button>
               <button className="btn btn-blue" style={{ flex: 1, justifyContent: 'center', padding: '12px' }} onClick={confirmerRelance}>Envoyer</button>
@@ -561,13 +538,11 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
       {confirmReinit && (
         <div className="modal-bg">
           <div className="modal">
             <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '8px' }}>Nouveau mois</h2>
-            <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '4px' }}>Remettre <span style={{ color: '#fb923c', fontWeight: '600' }}>{totalPaye} locataires</span> en attente.</p>
-            <p style={{ color: '#475569', fontSize: '13px', marginBottom: '20px' }}>Cette action est irreversible.</p>
+            <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px' }}>Remettre <span style={{ color: '#fb923c', fontWeight: '600' }}>{totalPaye} locataires</span> en attente ?</p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '12px' }} onClick={() => setConfirmReinit(false)}>Annuler</button>
               <button className="btn" style={{ flex: 1, justifyContent: 'center', padding: '12px', background: 'rgba(251,146,60,0.15)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.2)' }} onClick={reinitialiserMois}>Confirmer</button>
@@ -575,22 +550,18 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
       {showExport && (
         <div className="modal-bg">
           <div className="modal">
-            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '4px' }}>Exporter</h2>
-            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Telechargez vos donnees.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', padding: '14px 16px', borderRadius: '12px' }} onClick={exporterCSV}>
-                <span style={{ fontSize: '18px' }}>📊</span>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>Export Excel (CSV)</div>
-                  <div style={{ fontSize: '12px', color: '#475569' }}>{locataires.length} locataires</div>
-                </div>
-              </button>
-            </div>
-            <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '16px' }} onClick={() => setShowExport(false)}>Fermer</button>
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9', marginBottom: '20px' }}>Exporter</h2>
+            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', padding: '14px 16px', borderRadius: '12px', width: '100%' }} onClick={exporterCSV}>
+              <span style={{ fontSize: '18px' }}>📊</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>Export Excel (CSV)</div>
+                <div style={{ fontSize: '12px', color: '#475569' }}>{locataires.length} locataires</div>
+              </div>
+            </button>
+            <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '12px' }} onClick={() => setShowExport(false)}>Fermer</button>
           </div>
         </div>
       )}
