@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { use } from 'react'
 import { supabase } from '../../supabase'
 import { useToast } from '../../toast'
 
@@ -14,260 +13,263 @@ function joursDepuis(dateStr) {
   return `il y a ${diff} jours`
 }
 
-const TYPE_RELANCE = [
-  { value: 'amiable', label: 'Relance amiable', color: '#3b82f6' },
-  { value: 'formelle', label: 'Relance formelle', color: '#f59e0b' },
-  { value: 'mise_en_demeure', label: 'Mise en demeure', color: '#ef4444' },
-  { value: 'huissier', label: 'Huissier', color: '#7c3aed' },
-]
+function joursEnRetard(dateRetard) {
+  if (!dateRetard) return 0
+  return Math.floor((Date.now() - new Date(dateRetard).getTime()) / (1000 * 60 * 60 * 24))
+}
 
-export default function ModifierLocataire({ params: paramsPromise }) {
+const MOIS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+
+export default function LocatairePage({ params: paramsPromise }) {
   const params = use(paramsPromise)
   const router = useRouter()
   const { toast } = useToast()
-  const [saving, setSaving] = useState(false)
+  const [locataire, setLocataire] = useState(null)
+  const [relances, setRelances] = useState([])
+  const [historiquePaiements, setHistoriquePaiements] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({
-    nom: '', email: '', telephone: '', appartement: '',
-    loyer_montant: '', loyer_echeance: '', statut: 'en_attente',
-    notes: '', contrat_debut: '', contrat_fin: '',
-    relances: []
-  })
-  const [nouvelleRelance, setNouvelleRelance] = useState({
-    type: 'amiable',
-    date: new Date().toISOString().split('T')[0],
-    note: ''
-  })
+  const [onglet, setOnglet] = useState('profil')
 
   useEffect(() => {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const { data } = await supabase.from('locataires').select('*').eq('id', params.id).single()
-      if (data) setForm({
-        nom: data.nom || '', email: data.email || '', telephone: data.telephone || '',
-        appartement: data.appartement || '', loyer_montant: data.loyer_montant || '',
-        loyer_echeance: data.loyer_echeance || '', statut: data.statut || 'en_attente',
-        notes: data.notes || '', contrat_debut: data.contrat_debut || '', contrat_fin: data.contrat_fin || '',
-        relances: data.relances || []
-      })
+      const { data: loc } = await supabase.from('locataires').select('*').eq('id', params.id).single()
+      if (!loc) { router.push('/dashboard'); return }
+      setLocataire(loc)
+      // Relances depuis la table relances (automatiques + manuelles)
+      const { data: rel } = await supabase.from('relances').select('*')
+        .eq('locataire_id', params.id)
+        .order('envoye_le', { ascending: false })
+      setRelances(rel || [])
+      const annee = new Date().getFullYear()
+      const { data: hist } = await supabase.from('historique_paiements').select('*')
+        .eq('locataire_id', params.id).eq('annee', annee)
+      setHistoriquePaiements(hist || [])
       setLoading(false)
     }
     init()
   }, [params.id])
 
-  function ajouterRelance() {
-    if (!nouvelleRelance.date) return
-    const relance = { ...nouvelleRelance, id: Date.now() }
-    const relancesMaj = [relance, ...form.relances].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    setForm({ ...form, relances: relancesMaj })
-    setNouvelleRelance({ type: 'amiable', date: new Date().toISOString().split('T')[0], note: '' })
+  async function supprimerLocataire() {
+    if (!confirm(`Supprimer définitivement ${locataire.nom} ?`)) return
+    await supabase.from('relances').delete().eq('locataire_id', params.id)
+    await supabase.from('locataires').delete().eq('id', params.id)
+    toast('Locataire supprimé', 'success')
+    router.push('/dashboard')
   }
 
-  function supprimerRelance(id) {
-    setForm({ ...form, relances: form.relances.filter(r => r.id !== id) })
-  }
-
-  async function sauvegarder(e) {
-    e.preventDefault()
-    if (!form.nom || !form.appartement || !form.loyer_montant) { toast('Nom, appartement et loyer sont obligatoires', 'error'); return }
-    setSaving(true)
-    const { error } = await supabase.from('locataires').update(form).eq('id', params.id)
-    if (error) { toast('Erreur : ' + error.message, 'error'); setSaving(false); return }
-    toast('Modifications sauvegardees', 'success')
-    router.push('/locataires/' + params.id)
-  }
-
-  const inputStyle = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '11px 16px', color: '#f1f5f9', fontSize: '14px', outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.2s' }
-  const labelStyle = { display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }
-  const cardStyle = { background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px', marginBottom: '20px' }
-  const focusOn = e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'
-  const focusOff = e => e.target.style.borderColor = 'rgba(255,255,255,0.08)'
+  const cardStyle = { background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px', marginBottom: '16px' }
+  const labelStyle = { fontSize: '11px', fontWeight: '600', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em' }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ display: 'flex', gap: '6px' }}>
-        {[0, 0.15, 0.3].map((d, i) => <div key={i} style={{ width: '6px', height: '32px', background: '#3b82f6', borderRadius: '3px', animation: `pulse 0.9s ease ${d}s infinite` }} />)}
+        {[0,0.15,0.3].map((d,i) => <div key={i} style={{ width: '6px', height: '32px', background: '#3b82f6', borderRadius: '3px', animation: `pulse 0.9s ease ${d}s infinite` }}/>)}
       </div>
     </div>
   )
 
-  const derniereRelance = form.relances?.[0]
+  const jours = joursEnRetard(locataire.date_retard)
+  const statutColor = locataire.statut === 'paye' ? '#34d399' : locataire.statut === 'en_retard' ? '#f87171' : '#fb923c'
+  const statutLabel = locataire.statut === 'paye' ? 'Payé' : locataire.statut === 'en_retard' ? `En retard · ${jours}j` : 'En attente'
+
+  // Grille paiements 12 mois
+  const moisActuel = new Date().getMonth()
+  const grilleMois = MOIS.map((m, i) => {
+    const h = historiquePaiements.find(p => p.mois === i + 1)
+    return { mois: m, index: i, statut: h?.statut || null, actuel: i === moisActuel }
+  })
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex' }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap'); * { box-sizing: border-box; } input,select,textarea { font-family: inherit; }`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        @keyframes pulse { 0%,100%{transform:scaleY(0.5);opacity:0.5} 50%{transform:scaleY(1);opacity:1} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        .nav-link { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; font-size:14px; font-weight:500; color:#64748b; text-decoration:none; transition:all 0.2s; }
+        .nav-link:hover { background:rgba(255,255,255,0.06); color:#e2e8f0; }
+        .tab-btn { padding:9px 18px; border-radius:10px; font-size:13px; font-weight:500; border:none; cursor:pointer; transition:all 0.2s; font-family:inherit; }
+        .tab-btn.active { background:#2563eb; color:white; }
+        .tab-btn.inactive { background:rgba(255,255,255,0.04); color:#64748b; }
+        .tab-btn.inactive:hover { background:rgba(255,255,255,0.08); color:#94a3b8; }
+      `}</style>
 
       {/* Sidebar */}
-      <div style={{ width: '240px', flexShrink: 0, background: '#13131a', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh' }}>
+      <div style={{ width: '240px', flexShrink: 0, background: '#13131a', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
         <a href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '16px', textDecoration: 'none' }}>
           <svg width="28" height="28" viewBox="0 0 60 60"><rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/><rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/><rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/></svg>
           <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9' }}>GestImmo</span>
         </a>
-        {[{ href: '/dashboard', label: 'Dashboard' }, { href: '/stats', label: 'Statistiques' }, { href: '/historique', label: 'Historique' }].map(l => (
-          <a key={l.href} href={l.href} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#64748b', textDecoration: 'none', display: 'block', transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#e2e8f0' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#64748b' }}>{l.label}</a>
+        {[{href:'/dashboard',label:'Dashboard'},{href:'/stats',label:'Statistiques'},{href:'/historique',label:'Historique'}].map(l => (
+          <a key={l.href} href={l.href} className="nav-link">{l.label}</a>
         ))}
         <div style={{ flex: 1 }} />
-        <a href={'/locataires/' + params.id} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#94a3b8', textDecoration: 'none', background: 'rgba(255,255,255,0.04)', display: 'block' }}>← Retour au profil</a>
+        <a href="/dashboard" className="nav-link" style={{ background: 'rgba(255,255,255,0.04)' }}>← Retour dashboard</a>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, padding: '40px', maxWidth: '700px' }}>
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Modifier le locataire</h1>
-          <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{form.nom} · {form.appartement}</p>
-        </div>
+      {/* Contenu */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '32px 40px' }}>
+        <div style={{ maxWidth: '760px', animation: 'fadeIn 0.4s ease' }}>
 
-        <form onSubmit={sauvegarder}>
-
-          {/* Infos personnelles */}
-          <div style={cardStyle}>
-            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Informations personnelles</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Nom complet <span style={{ color: '#f87171' }}>*</span></label>
-                <input style={inputStyle} value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
+          {/* Header profil */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: `${statutColor}18`, border: `2px solid ${statutColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: '700', color: statutColor }}>
+                {locataire.nom.charAt(0).toUpperCase()}
               </div>
               <div>
-                <label style={labelStyle}>Email</label>
-                <input type="email" style={inputStyle} value={form.email} onChange={e => setForm({...form, email: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
-              </div>
-              <div>
-                <label style={labelStyle}>Telephone</label>
-                <input style={inputStyle} value={form.telephone} onChange={e => setForm({...form, telephone: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
-              </div>
-            </div>
-          </div>
-
-          {/* Loyer */}
-          <div style={cardStyle}>
-            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Loyer</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-              <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Appartement <span style={{ color: '#f87171' }}>*</span></label>
-                <input style={inputStyle} value={form.appartement} onChange={e => setForm({...form, appartement: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
-              </div>
-              <div>
-                <label style={labelStyle}>Montant (€) <span style={{ color: '#f87171' }}>*</span></label>
-                <input type="number" style={inputStyle} value={form.loyer_montant} onChange={e => setForm({...form, loyer_montant: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
-              </div>
-              <div>
-                <label style={labelStyle}>Echeance (jour)</label>
-                <input type="number" min="1" max="31" style={inputStyle} value={form.loyer_echeance} onChange={e => setForm({...form, loyer_echeance: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
-              </div>
-              <div>
-                <label style={labelStyle}>Statut</label>
-                <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.statut} onChange={e => setForm({...form, statut: e.target.value})}>
-                  <option value="en_attente">En attente</option>
-                  <option value="paye">Paye</option>
-                  <option value="en_retard">En retard</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Contrat */}
-          <div style={cardStyle}>
-            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Contrat de bail</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div>
-                <label style={labelStyle}>Date de debut</label>
-                <input type="date" style={inputStyle} value={form.contrat_debut} onChange={e => setForm({...form, contrat_debut: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
-              </div>
-              <div>
-                <label style={labelStyle}>Date de fin</label>
-                <input type="date" style={inputStyle} value={form.contrat_fin} onChange={e => setForm({...form, contrat_fin: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
-              </div>
-            </div>
-          </div>
-
-          {/* ── RELANCES ── */}
-          <div style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Relances {form.relances.length > 0 && <span style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6', borderRadius: '20px', padding: '2px 8px', fontSize: '11px', marginLeft: '8px' }}>{form.relances.length}</span>}
-              </h2>
-              {derniereRelance && (
-                <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  Dernière : <span style={{ color: '#94a3b8', fontWeight: '600' }}>{joursDepuis(derniereRelance.date)}</span>
-                </span>
-              )}
-            </div>
-
-            {/* Ajouter une relance */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-              <p style={{ fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ajouter une relance</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                <div>
-                  <label style={labelStyle}>Type</label>
-                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={nouvelleRelance.type} onChange={e => setNouvelleRelance({...nouvelleRelance, type: e.target.value})}>
-                    {TYPE_RELANCE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>Date</label>
-                  <input type="date" style={inputStyle} value={nouvelleRelance.date} onChange={e => setNouvelleRelance({...nouvelleRelance, date: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+                <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>{locataire.nom}</h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                  <span style={{ fontSize: '13px', color: '#64748b' }}>{locataire.appartement}</span>
+                  <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#334155', display: 'inline-block' }} />
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9', fontFamily: 'DM Mono' }}>{locataire.loyer_montant}€/mois</span>
+                  <span style={{ background: `${statutColor}15`, color: statutColor, border: `1px solid ${statutColor}30`, borderRadius: '20px', padding: '3px 12px', fontSize: '12px', fontWeight: '600' }}>{statutLabel}</span>
                 </div>
               </div>
-              <div style={{ marginBottom: '12px' }}>
-                <label style={labelStyle}>Note (optionnel)</label>
-                <input style={inputStyle} placeholder="Ex : appel téléphonique, courrier envoyé..." value={nouvelleRelance.note} onChange={e => setNouvelleRelance({...nouvelleRelance, note: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
-              </div>
-              <button type="button" onClick={ajouterRelance} style={{ padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: '600', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.25)', cursor: 'pointer', transition: 'all 0.2s' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.25)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.15)'}>
-                + Ajouter
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <a href={`/locataires/${params.id}/modifier`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '500', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.08)' }}>
+                ✏️ Modifier
+              </a>
+              <button onClick={supprimerLocataire} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '500', background: 'rgba(248,113,113,0.08)', color: '#f87171', border: '1px solid rgba(248,113,113,0.15)', cursor: 'pointer' }}>
+                🗑 Supprimer
               </button>
             </div>
+          </div>
 
-            {/* Historique des relances */}
-            {form.relances.length === 0 ? (
-              <p style={{ fontSize: '13px', color: '#334155', textAlign: 'center', padding: '20px 0' }}>Aucune relance enregistrée</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {form.relances.map((r, i) => {
-                  const typeInfo = TYPE_RELANCE.find(t => t.value === r.type) || TYPE_RELANCE[0]
-                  const depuis = joursDepuis(r.date)
-                  const dateFormatee = new Date(r.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
-                  return (
-                    <div key={r.id || i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', position: 'relative' }}>
-                      {/* Indicateur coloré */}
-                      <div style={{ width: '3px', borderRadius: '4px', background: typeInfo.color, alignSelf: 'stretch', flexShrink: 0, opacity: 0.8 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: r.note ? '6px' : '0' }}>
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: typeInfo.color }}>{typeInfo.label}</span>
-                          <span style={{ fontSize: '12px', color: '#475569' }}>·</span>
-                          <span style={{ fontSize: '12px', color: '#94a3b8' }}>{dateFormatee}</span>
-                          <span style={{ fontSize: '11px', color: '#334155', background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: '20px' }}>{depuis}</span>
+          {/* Onglets */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+            {[{id:'profil',label:'👤 Profil'},{id:'relances',label:`📧 Relances (${relances.length})`},{id:'paiements',label:'📅 Paiements'}].map(o => (
+              <button key={o.id} className={`tab-btn ${onglet === o.id ? 'active' : 'inactive'}`} onClick={() => setOnglet(o.id)}>{o.label}</button>
+            ))}
+          </div>
+
+          {/* ===== ONGLET PROFIL ===== */}
+          {onglet === 'profil' && (
+            <div>
+              {/* Infos */}
+              <div style={cardStyle}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px' }}>Informations</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  {[
+                    { label: 'Email', value: locataire.email || '—' },
+                    { label: 'Téléphone', value: locataire.telephone || '—' },
+                    { label: 'Échéance', value: locataire.loyer_echeance ? `Le ${locataire.loyer_echeance} du mois` : '—' },
+                    { label: 'Début contrat', value: locataire.contrat_debut ? new Date(locataire.contrat_debut).toLocaleDateString('fr-FR') : '—' },
+                    { label: 'Fin contrat', value: locataire.contrat_fin ? new Date(locataire.contrat_fin).toLocaleDateString('fr-FR') : '—' },
+                    { label: 'Dernière relance', value: locataire.derniere_relance ? joursDepuis(locataire.derniere_relance) : '—' },
+                  ].map((item, i) => (
+                    <div key={i}>
+                      <div style={labelStyle}>{item.label}</div>
+                      <div style={{ fontSize: '14px', color: '#e2e8f0', marginTop: '4px', fontWeight: '500' }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {locataire.notes && (
+                  <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
+                    <div style={labelStyle}>Notes internes</div>
+                    <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px', lineHeight: 1.6 }}>{locataire.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Résumé financier */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                {[
+                  { label: 'Loyer mensuel', value: locataire.loyer_montant + '€', color: '#a78bfa' },
+                  { label: 'Loyer annuel', value: (parseFloat(locataire.loyer_montant) * 12).toLocaleString('fr-FR') + '€', color: '#60a5fa' },
+                  { label: 'Relances envoyées', value: relances.length, color: relances.length > 3 ? '#f87171' : '#34d399' },
+                ].map((item, i) => (
+                  <div key={i} style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '18px' }}>
+                    <div style={labelStyle}>{item.label}</div>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: item.color, marginTop: '6px', fontFamily: 'DM Mono' }}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ===== ONGLET RELANCES ===== */}
+          {onglet === 'relances' && (
+            <div style={cardStyle}>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '20px' }}>
+                Historique des relances envoyées
+              </div>
+              {relances.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#334155' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>📭</div>
+                  <p style={{ fontSize: '14px' }}>Aucune relance envoyée pour ce locataire.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {relances.map((r, i) => {
+                    const date = r.envoye_le || r.created_at
+                    const depuis = joursDepuis(date)
+                    const dateFormatee = new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+                    const heureFormatee = new Date(date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                    const isRecent = i === 0
+                    return (
+                      <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', padding: '16px', background: isRecent ? 'rgba(37,99,235,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${isRecent ? 'rgba(37,99,235,0.2)' : 'rgba(255,255,255,0.05)'}`, borderRadius: '12px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(59,130,246,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>
+                          📧
                         </div>
-                        {r.note && <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>{r.note}</p>}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9' }}>{r.template_nom || 'Relance'}</span>
+                            {isRecent && <span style={{ fontSize: '10px', fontWeight: '700', color: '#60a5fa', background: 'rgba(96,165,250,0.12)', borderRadius: '20px', padding: '2px 8px' }}>DERNIÈRE</span>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>{dateFormatee} à {heureFormatee}</span>
+                            <span style={{ fontSize: '11px', color: '#334155' }}>·</span>
+                            <span style={{ fontSize: '12px', fontWeight: '500', color: '#60a5fa' }}>{depuis}</span>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: '#34d399', background: 'rgba(52,211,153,0.1)', borderRadius: '20px', padding: '3px 10px', flexShrink: 0 }}>Envoyée ✓</span>
                       </div>
-                      <button type="button" onClick={() => supprimerRelance(r.id)} style={{ background: 'none', border: 'none', color: '#334155', cursor: 'pointer', padding: '2px 6px', fontSize: '16px', borderRadius: '6px', transition: 'all 0.2s', flexShrink: 0 }}
-                        onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
-                        onMouseLeave={e => { e.currentTarget.style.color = '#334155'; e.currentTarget.style.background = 'none' }}>×</button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== ONGLET PAIEMENTS ===== */}
+          {onglet === 'paiements' && (
+            <div style={cardStyle}>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '20px' }}>
+                Suivi paiements {new Date().getFullYear()}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                {grilleMois.map(m => {
+                  const color = m.statut === 'paye' ? '#34d399' : m.statut === 'impaye' ? '#f87171' : '#334155'
+                  const bg = m.statut === 'paye' ? 'rgba(52,211,153,0.1)' : m.statut === 'impaye' ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.03)'
+                  return (
+                    <div key={m.index} style={{ background: bg, border: `1px solid ${m.actuel ? color : 'rgba(255,255,255,0.06)'}`, borderRadius: '10px', padding: '12px 8px', textAlign: 'center', outline: m.actuel ? `2px solid ${color}40` : 'none', outlineOffset: '2px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>{m.mois}</div>
+                      <div style={{ fontSize: '18px' }}>
+                        {m.statut === 'paye' ? '✓' : m.statut === 'impaye' ? '✗' : '·'}
+                      </div>
+                      <div style={{ fontSize: '10px', color, marginTop: '4px', fontWeight: '500' }}>
+                        {m.statut === 'paye' ? 'Payé' : m.statut === 'impaye' ? 'Impayé' : m.actuel ? 'En cours' : '—'}
+                      </div>
                     </div>
                   )
                 })}
               </div>
-            )}
-          </div>
+              <div style={{ display: 'flex', gap: '16px', marginTop: '16px', justifyContent: 'center' }}>
+                {[{label:'Payé',color:'#34d399'},{label:'Impayé',color:'#f87171'},{label:'Non renseigné',color:'#334155'}].map(l => (
+                  <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: l.color }} />
+                    <span style={{ fontSize: '12px', color: '#475569' }}>{l.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Notes */}
-          <div style={cardStyle}>
-            <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notes internes</h2>
-            <textarea style={{ ...inputStyle, minHeight: '100px', resize: 'vertical', lineHeight: 1.6 }} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} onFocus={focusOn} onBlur={focusOff} placeholder="Notes visibles uniquement par vous..." />
-          </div>
-
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-            <a href={'/locataires/' + params.id} style={{ display: 'inline-flex', alignItems: 'center', padding: '11px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', textDecoration: 'none' }}>Annuler</a>
-            <button type="submit" disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 28px', borderRadius: '10px', fontSize: '14px', fontWeight: '600', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', transition: 'all 0.2s', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Sauvegarde...' : 'Sauvegarder les modifications'}
-            </button>
-          </div>
-        </form>
+        </div>
       </div>
     </div>
   )
