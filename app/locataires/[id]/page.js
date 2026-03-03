@@ -6,13 +6,38 @@ import { use } from 'react'
 import { supabase } from '../../supabase'
 import { useToast } from '../../toast'
 
+function joursDepuis(dateStr) {
+  if (!dateStr) return null
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+  if (diff === 0) return "aujourd'hui"
+  if (diff === 1) return 'il y a 1 jour'
+  return `il y a ${diff} jours`
+}
+
+const TYPE_RELANCE = [
+  { value: 'amiable', label: 'Relance amiable', color: '#3b82f6' },
+  { value: 'formelle', label: 'Relance formelle', color: '#f59e0b' },
+  { value: 'mise_en_demeure', label: 'Mise en demeure', color: '#ef4444' },
+  { value: 'huissier', label: 'Huissier', color: '#7c3aed' },
+]
+
 export default function ModifierLocataire({ params: paramsPromise }) {
   const params = use(paramsPromise)
   const router = useRouter()
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ nom: '', email: '', telephone: '', appartement: '', loyer_montant: '', loyer_echeance: '', statut: 'en_attente', notes: '', contrat_debut: '', contrat_fin: '' })
+  const [form, setForm] = useState({
+    nom: '', email: '', telephone: '', appartement: '',
+    loyer_montant: '', loyer_echeance: '', statut: 'en_attente',
+    notes: '', contrat_debut: '', contrat_fin: '',
+    relances: []
+  })
+  const [nouvelleRelance, setNouvelleRelance] = useState({
+    type: 'amiable',
+    date: new Date().toISOString().split('T')[0],
+    note: ''
+  })
 
   useEffect(() => {
     async function init() {
@@ -23,12 +48,25 @@ export default function ModifierLocataire({ params: paramsPromise }) {
         nom: data.nom || '', email: data.email || '', telephone: data.telephone || '',
         appartement: data.appartement || '', loyer_montant: data.loyer_montant || '',
         loyer_echeance: data.loyer_echeance || '', statut: data.statut || 'en_attente',
-        notes: data.notes || '', contrat_debut: data.contrat_debut || '', contrat_fin: data.contrat_fin || ''
+        notes: data.notes || '', contrat_debut: data.contrat_debut || '', contrat_fin: data.contrat_fin || '',
+        relances: data.relances || []
       })
       setLoading(false)
     }
     init()
   }, [params.id])
+
+  function ajouterRelance() {
+    if (!nouvelleRelance.date) return
+    const relance = { ...nouvelleRelance, id: Date.now() }
+    const relancesMaj = [relance, ...form.relances].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    setForm({ ...form, relances: relancesMaj })
+    setNouvelleRelance({ type: 'amiable', date: new Date().toISOString().split('T')[0], note: '' })
+  }
+
+  function supprimerRelance(id) {
+    setForm({ ...form, relances: form.relances.filter(r => r.id !== id) })
+  }
 
   async function sauvegarder(e) {
     e.preventDefault()
@@ -54,6 +92,8 @@ export default function ModifierLocataire({ params: paramsPromise }) {
     </div>
   )
 
+  const derniereRelance = form.relances?.[0]
+
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', color: '#e2e8f0', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex' }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap'); * { box-sizing: border-box; } input,select,textarea { font-family: inherit; }`}</style>
@@ -75,11 +115,9 @@ export default function ModifierLocataire({ params: paramsPromise }) {
 
       {/* Content */}
       <div style={{ flex: 1, padding: '40px', maxWidth: '700px' }}>
-        <div style={{ marginBottom: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Modifier le locataire</h1>
-            <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{form.nom} · {form.appartement}</p>
-          </div>
+        <div style={{ marginBottom: '32px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Modifier le locataire</h1>
+          <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{form.nom} · {form.appartement}</p>
         </div>
 
         <form onSubmit={sauvegarder}>
@@ -143,6 +181,77 @@ export default function ModifierLocataire({ params: paramsPromise }) {
                 <input type="date" style={inputStyle} value={form.contrat_fin} onChange={e => setForm({...form, contrat_fin: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
               </div>
             </div>
+          </div>
+
+          {/* ── RELANCES ── */}
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Relances {form.relances.length > 0 && <span style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6', borderRadius: '20px', padding: '2px 8px', fontSize: '11px', marginLeft: '8px' }}>{form.relances.length}</span>}
+              </h2>
+              {derniereRelance && (
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Dernière : <span style={{ color: '#94a3b8', fontWeight: '600' }}>{joursDepuis(derniereRelance.date)}</span>
+                </span>
+              )}
+            </div>
+
+            {/* Ajouter une relance */}
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+              <p style={{ fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ajouter une relance</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={labelStyle}>Type</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={nouvelleRelance.type} onChange={e => setNouvelleRelance({...nouvelleRelance, type: e.target.value})}>
+                    {TYPE_RELANCE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Date</label>
+                  <input type="date" style={inputStyle} value={nouvelleRelance.date} onChange={e => setNouvelleRelance({...nouvelleRelance, date: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+                </div>
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>Note (optionnel)</label>
+                <input style={inputStyle} placeholder="Ex : appel téléphonique, courrier envoyé..." value={nouvelleRelance.note} onChange={e => setNouvelleRelance({...nouvelleRelance, note: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
+              </div>
+              <button type="button" onClick={ajouterRelance} style={{ padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: '600', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.25)', cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.25)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.15)'}>
+                + Ajouter
+              </button>
+            </div>
+
+            {/* Historique des relances */}
+            {form.relances.length === 0 ? (
+              <p style={{ fontSize: '13px', color: '#334155', textAlign: 'center', padding: '20px 0' }}>Aucune relance enregistrée</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {form.relances.map((r, i) => {
+                  const typeInfo = TYPE_RELANCE.find(t => t.value === r.type) || TYPE_RELANCE[0]
+                  const depuis = joursDepuis(r.date)
+                  const dateFormatee = new Date(r.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+                  return (
+                    <div key={r.id || i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', position: 'relative' }}>
+                      {/* Indicateur coloré */}
+                      <div style={{ width: '3px', borderRadius: '4px', background: typeInfo.color, alignSelf: 'stretch', flexShrink: 0, opacity: 0.8 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: r.note ? '6px' : '0' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: typeInfo.color }}>{typeInfo.label}</span>
+                          <span style={{ fontSize: '12px', color: '#475569' }}>·</span>
+                          <span style={{ fontSize: '12px', color: '#94a3b8' }}>{dateFormatee}</span>
+                          <span style={{ fontSize: '11px', color: '#334155', background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: '20px' }}>{depuis}</span>
+                        </div>
+                        {r.note && <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>{r.note}</p>}
+                      </div>
+                      <button type="button" onClick={() => supprimerRelance(r.id)} style={{ background: 'none', border: 'none', color: '#334155', cursor: 'pointer', padding: '2px 6px', fontSize: '16px', borderRadius: '6px', transition: 'all 0.2s', flexShrink: 0 }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
+                        onMouseLeave={e => { e.currentTarget.style.color = '#334155'; e.currentTarget.style.background = 'none' }}>×</button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Notes */}
