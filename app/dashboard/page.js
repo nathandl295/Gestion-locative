@@ -100,7 +100,7 @@ export default function Dashboard() {
 
   async function confirmerRelance() {
     const { locataire, template } = confirmation; setConfirmation(null)
-    const corps = template.corps.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
+    const corps = template.corps.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', onClick: null },oyer_montant).replace(/{appartement}/g, locataire.appartement)
     const sujet = template.sujet.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
     const res = await fetch('/api/relance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: locataire.nom, email: locataire.email, sujet, corps: corps.split('\n').join('<br/>'), locataire_id: locataire.id, template_nom: template.nom }) })
     if (res.ok) toast('Relance envoyee a ' + locataire.nom, 'success')
@@ -194,7 +194,7 @@ export default function Dashboard() {
   })
 
   const statCards = [
-    { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', onClick: null },
+    { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', onClick: () => setOnglet('tous') },
     { label: 'En retard', value: totalRetard, color: '#f87171', bg: 'rgba(248,113,113,0.08)', onClick: () => setOnglet('retard') },
     { label: 'Payes', value: totalPaye, color: '#34d399', bg: 'rgba(52,211,153,0.08)', onClick: () => setOnglet('paye') },
     { label: 'En attente', value: totalAttente, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', onClick: () => setOnglet('attente') },
