@@ -37,7 +37,7 @@ export default function Dashboard() {
   const [tri, setTri] = useState('retard_desc')
   const [showExport, setShowExport] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const [bandeauOuvert, setBandeauOuvert] = useState(false)
+  const [bandeauOuvert, setBandeauOuvert] = useState(true)
 
   useEffect(() => {
     async function init() {
@@ -175,7 +175,8 @@ export default function Dashboard() {
 
   const recommandations = getRecommandations()
   const totalAlertes = recommandations.length + contratsExpirants.length
-  const listeActive = onglet === 'retard' ? enRetard : onglet === 'paye' ? payes : enAttente
+  const tous = filtrer(locataires)
+  const listeActive = onglet === 'retard' ? enRetard : onglet === 'paye' ? payes : onglet === 'attente' ? enAttente : tous
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
@@ -341,6 +342,7 @@ export default function Dashboard() {
                   )}
                 </div>
                 <span style={{ color: '#475569', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: bandeauOuvert ? 'rotate(180deg)' : 'none' }}>▼</span>
+                <button onClick={e => { e.stopPropagation(); setBandeauOuvert(false) }} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#475569', cursor: 'pointer', padding: '2px 7px', borderRadius: '6px', fontSize: '14px', fontFamily: 'inherit' }}>×</button>
               </button>
 
               {bandeauOuvert && (
@@ -412,6 +414,7 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '4px' }}>
               {[
+                { id: 'tous', label: 'Tous', count: locataires.length, color: '#94a3b8' },
                 { id: 'retard', label: 'En retard', count: totalRetard, color: '#f87171' },
                 { id: 'attente', label: 'En attente', count: totalAttente, color: '#fb923c' },
                 { id: 'paye', label: 'Payes', count: totalPaye, color: '#34d399' },
@@ -494,6 +497,27 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+
+            {onglet === 'tous' && tous.map((l, i) => {
+              const statutColor = l.statut === 'paye' ? '#34d399' : l.statut === 'en_retard' ? '#f87171' : '#fb923c'
+              const statutLabel = l.statut === 'paye' ? 'Payé' : l.statut === 'en_retard' ? joursEnRetard(l.date_retard) + 'j de retard' : 'En attente'
+              return (
+                <div key={l.id} className="row-item animate-in" style={{ animationDelay: i * 0.04 + 's', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: statutColor + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '15px', fontWeight: '700', color: statutColor }}>{l.nom.charAt(0).toUpperCase()}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</div>
+                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                    <span className="badge" style={{ background: statutColor + '18', color: statutColor }}>{statutLabel}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
+                    <a href={"/locataires/" + l.id} className="btn btn-ghost">Voir</a>
+                  </div>
+                </div>
+              )
+            })}
 
             {onglet === 'paye' && payes.map((l, i) => {
               const jp = prochainPaiement(l.loyer_echeance)

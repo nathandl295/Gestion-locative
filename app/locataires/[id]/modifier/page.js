@@ -12,7 +12,11 @@ export default function ModifierLocataire({ params: paramsPromise }) {
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ nom: '', email: '', telephone: '', appartement: '', loyer_montant: '', loyer_echeance: '', statut: 'en_attente', notes: '', contrat_debut: '', contrat_fin: '' })
+  const [form, setForm] = useState({
+    nom: '', email: '', telephone: '', appartement: '',
+    loyer_montant: '', loyer_echeance: '', statut: 'en_attente',
+    notes: '', contrat_debut: '', contrat_fin: ''
+  })
 
   useEffect(() => {
     async function init() {
@@ -32,11 +36,13 @@ export default function ModifierLocataire({ params: paramsPromise }) {
 
   async function sauvegarder(e) {
     e.preventDefault()
-    if (!form.nom || !form.appartement || !form.loyer_montant) { toast('Nom, appartement et loyer sont obligatoires', 'error'); return }
+    if (!form.nom || !form.appartement || !form.loyer_montant) {
+      toast('Nom, appartement et loyer sont obligatoires', 'error'); return
+    }
     setSaving(true)
     const { error } = await supabase.from('locataires').update(form).eq('id', params.id)
     if (error) { toast('Erreur : ' + error.message, 'error'); setSaving(false); return }
-    toast('Modifications sauvegardees', 'success')
+    toast('Modifications sauvegardées', 'success')
     router.push('/locataires/' + params.id)
   }
 
@@ -64,10 +70,10 @@ export default function ModifierLocataire({ params: paramsPromise }) {
           <svg width="28" height="28" viewBox="0 0 60 60"><rect x="2" y="10" width="12" height="40" rx="6" fill="#3b82f6"/><rect x="22" y="18" width="12" height="32" rx="6" fill="#3b82f6" opacity="0.7"/><rect x="42" y="26" width="12" height="24" rx="6" fill="#3b82f6" opacity="0.4"/></svg>
           <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9' }}>GestImmo</span>
         </a>
-        {[{ href: '/dashboard', label: 'Dashboard' }, { href: '/stats', label: 'Statistiques' }, { href: '/historique', label: 'Historique' }].map(l => (
-          <a key={l.href} href={l.href} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#64748b', textDecoration: 'none', display: 'block', transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#e2e8f0' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#64748b' }}>{l.label}</a>
+        {[{href:'/dashboard',label:'Dashboard'},{href:'/stats',label:'Statistiques'},{href:'/historique',label:'Historique'}].map(l => (
+          <a key={l.href} href={l.href} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#64748b', textDecoration: 'none', display: 'block' }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,0.06)'; e.currentTarget.style.color='#e2e8f0' }}
+            onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#64748b' }}>{l.label}</a>
         ))}
         <div style={{ flex: 1 }} />
         <a href={'/locataires/' + params.id} style={{ padding: '10px 14px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#94a3b8', textDecoration: 'none', background: 'rgba(255,255,255,0.04)', display: 'block' }}>← Retour au profil</a>
@@ -75,21 +81,18 @@ export default function ModifierLocataire({ params: paramsPromise }) {
 
       {/* Content */}
       <div style={{ flex: 1, padding: '40px', maxWidth: '700px' }}>
-        <div style={{ marginBottom: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Modifier le locataire</h1>
-            <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{form.nom} · {form.appartement}</p>
-          </div>
+        <div style={{ marginBottom: '32px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Modifier le locataire</h1>
+          <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{form.nom} · {form.appartement}</p>
         </div>
 
         <form onSubmit={sauvegarder}>
-
           {/* Infos personnelles */}
           <div style={cardStyle}>
             <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Informations personnelles</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Nom complet <span style={{ color: '#f87171' }}>*</span></label>
+                <label style={labelStyle}>Nom complet *</label>
                 <input style={inputStyle} value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
               </div>
               <div>
@@ -97,7 +100,7 @@ export default function ModifierLocataire({ params: paramsPromise }) {
                 <input type="email" style={inputStyle} value={form.email} onChange={e => setForm({...form, email: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
               </div>
               <div>
-                <label style={labelStyle}>Telephone</label>
+                <label style={labelStyle}>Téléphone</label>
                 <input style={inputStyle} value={form.telephone} onChange={e => setForm({...form, telephone: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
               </div>
             </div>
@@ -108,22 +111,22 @@ export default function ModifierLocataire({ params: paramsPromise }) {
             <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Loyer</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Appartement <span style={{ color: '#f87171' }}>*</span></label>
+                <label style={labelStyle}>Appartement *</label>
                 <input style={inputStyle} value={form.appartement} onChange={e => setForm({...form, appartement: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
               </div>
               <div>
-                <label style={labelStyle}>Montant (€) <span style={{ color: '#f87171' }}>*</span></label>
+                <label style={labelStyle}>Montant (€) *</label>
                 <input type="number" style={inputStyle} value={form.loyer_montant} onChange={e => setForm({...form, loyer_montant: e.target.value})} onFocus={focusOn} onBlur={focusOff} required />
               </div>
               <div>
-                <label style={labelStyle}>Echeance (jour)</label>
+                <label style={labelStyle}>Échéance (jour)</label>
                 <input type="number" min="1" max="31" style={inputStyle} value={form.loyer_echeance} onChange={e => setForm({...form, loyer_echeance: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
               </div>
               <div>
                 <label style={labelStyle}>Statut</label>
                 <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.statut} onChange={e => setForm({...form, statut: e.target.value})}>
                   <option value="en_attente">En attente</option>
-                  <option value="paye">Paye</option>
+                  <option value="paye">Payé</option>
                   <option value="en_retard">En retard</option>
                 </select>
               </div>
@@ -135,7 +138,7 @@ export default function ModifierLocataire({ params: paramsPromise }) {
             <h2 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Contrat de bail</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={labelStyle}>Date de debut</label>
+                <label style={labelStyle}>Date de début</label>
                 <input type="date" style={inputStyle} value={form.contrat_debut} onChange={e => setForm({...form, contrat_debut: e.target.value})} onFocus={focusOn} onBlur={focusOff} />
               </div>
               <div>
@@ -154,8 +157,8 @@ export default function ModifierLocataire({ params: paramsPromise }) {
           {/* Actions */}
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
             <a href={'/locataires/' + params.id} style={{ display: 'inline-flex', alignItems: 'center', padding: '11px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '500', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', textDecoration: 'none' }}>Annuler</a>
-            <button type="submit" disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 28px', borderRadius: '10px', fontSize: '14px', fontWeight: '600', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', transition: 'all 0.2s', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Sauvegarde...' : 'Sauvegarder les modifications'}
+            <button type="submit" disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 28px', borderRadius: '10px', fontSize: '14px', fontWeight: '600', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Sauvegarde...' : 'Sauvegarder'}
             </button>
           </div>
         </form>
