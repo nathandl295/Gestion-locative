@@ -28,23 +28,13 @@ function scoreRisque(l) {
   const j = joursEnRetard(l.date_retard)
   const anciennete = l.contrat_debut ? joursDepuis(l.contrat_debut) : null
   const jamaisRelance = !l.derniere_relance
-
   if (l.statut !== 'en_retard') return null
-
-  // Pas assez de données
-  if (anciennete !== null && anciennete < 60) {
-    return { niveau: 'nouveau', label: 'Nouveau', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', dot: '#94a3b8', raisons: ['Moins de 2 mois — historique insuffisant'] }
-  }
-
-  // Comportement inhabituel : premier retard après long historique propre
-  if (jamaisRelance && anciennete !== null && anciennete > 180) {
-    return { niveau: 'inhabituel', label: 'Inhabituel ⚡', color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', dot: '#a78bfa', raisons: [`Premier retard détecté`, `${Math.floor(anciennete / 30)} mois sans incident`] }
-  }
-
+  if (anciennete !== null && anciennete < 60) return { niveau: 'nouveau', label: 'Nouveau', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', dot: '#94a3b8', raisons: ['Historique insuffisant'] }
+  if (jamaisRelance && anciennete !== null && anciennete > 180) return { niveau: 'inhabituel', label: 'Inhabituel ⚡', color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', dot: '#a78bfa', raisons: [`Premier retard`, `${Math.floor(anciennete / 30)} mois sans incident`] }
   if (j >= 30) return { niveau: 'critique', label: 'Critique', color: '#f87171', bg: 'rgba(248,113,113,0.1)', dot: '#f87171', raisons: [`${j}j de retard`, 'Mise en demeure urgente'] }
-  if (j >= 15) return { niveau: 'eleve', label: 'Élevé', color: '#f87171', bg: 'rgba(248,113,113,0.08)', dot: '#f87171', raisons: [`${j}j de retard`, 'Action immédiate requise'] }
-  if (j >= 7)  return { niveau: 'moyen', label: 'Moyen', color: '#fb923c', bg: 'rgba(251,146,60,0.08)', dot: '#fb923c', raisons: [`${j}j de retard`, 'Surveillance active'] }
-  return { niveau: 'faible', label: 'Faible', color: '#fbbf24', bg: 'rgba(251,191,36,0.08)', dot: '#fbbf24', raisons: [`${j}j de retard`, 'Relance préventive conseillée'] }
+  if (j >= 15) return { niveau: 'eleve', label: 'Élevé', color: '#f87171', bg: 'rgba(248,113,113,0.08)', dot: '#f87171', raisons: [`${j}j de retard`, 'Action immédiate'] }
+  if (j >= 7) return { niveau: 'moyen', label: 'Moyen', color: '#fb923c', bg: 'rgba(251,146,60,0.08)', dot: '#fb923c', raisons: [`${j}j de retard`, 'Surveillance active'] }
+  return { niveau: 'faible', label: 'Faible', color: '#fbbf24', bg: 'rgba(251,191,36,0.08)', dot: '#fbbf24', raisons: [`${j}j de retard`, 'Relance préventive'] }
 }
 
 export default function Dashboard() {
@@ -54,13 +44,13 @@ export default function Dashboard() {
   const [nomAgence, setNomAgence] = useState('')
   const [recherche, setRecherche] = useState('')
   const [onglet, setOnglet] = useState('retard')
+  const [filtreRisque, setFiltreRisque] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
   const [confirmReinit, setConfirmReinit] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tri, setTri] = useState('retard_desc')
   const [showExport, setShowExport] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const [bandeauOuvert, setBandeauOuvert] = useState(true)
 
   useEffect(() => {
     async function init() {
@@ -123,18 +113,9 @@ export default function Dashboard() {
 
   async function confirmerRelance() {
     const { locataire, template } = confirmation; setConfirmation(null)
-    const corps = template.corps
-      .replace(/{nom}/g, locataire.nom)
-      .replace(/{montant}/g, locataire.loyer_montant)
-      .replace(/{appartement}/g, locataire.appartement)
-    const sujet = template.sujet
-      .replace(/{nom}/g, locataire.nom)
-      .replace(/{montant}/g, locataire.loyer_montant)
-      .replace(/{appartement}/g, locataire.appartement)
-    const res = await fetch('/api/relance', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nom: locataire.nom, email: locataire.email, sujet, corps: corps.split('\n').join('<br/>'), locataire_id: locataire.id, template_nom: template.nom })
-    })
+    const corps = template.corps.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
+    const sujet = template.sujet.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
+    const res = await fetch('/api/relance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: locataire.nom, email: locataire.email, sujet, corps: corps.split('\n').join('<br/>'), locataire_id: locataire.id, template_nom: template.nom }) })
     if (res.ok) toast('Relance envoyee a ' + locataire.nom, 'success')
     else toast('Erreur lors de l\'envoi', 'error')
     setLocataires(l => l.map(x => x.id === locataire.id ? { ...x, derniere_relance: new Date().toISOString() } : x))
@@ -167,44 +148,53 @@ export default function Dashboard() {
   }
 
   function filtrer(liste) {
-    if (!recherche) return [...liste].sort((a, b) => {
+    let result = [...liste]
+    if (filtreRisque) {
+      result = result.filter(l => {
+        const s = scoreRisque(l)
+        if (filtreRisque === 'critique') return s && (s.niveau === 'critique' || s.niveau === 'eleve')
+        if (filtreRisque === 'surveiller') return s && (s.niveau === 'moyen' || s.niveau === 'inhabituel')
+        if (filtreRisque === 'inhabituel') return s && s.niveau === 'inhabituel'
+        return true
+      })
+    }
+    if (recherche) {
+      const q = recherche.toLowerCase()
+      result = result.filter(l => l.nom.toLowerCase().includes(q) || l.appartement.toLowerCase().includes(q) || (l.email && l.email.toLowerCase().includes(q)))
+    }
+    return result.sort((a, b) => {
       if (tri === 'retard_desc') return joursEnRetard(b.date_retard) - joursEnRetard(a.date_retard)
       if (tri === 'nom_asc') return a.nom.localeCompare(b.nom)
       if (tri === 'loyer_desc') return b.loyer_montant - a.loyer_montant
       return 0
     })
-    const q = recherche.toLowerCase()
-    return liste.filter(l => l.nom.toLowerCase().includes(q) || l.appartement.toLowerCase().includes(q) || (l.email && l.email.toLowerCase().includes(q)))
   }
 
   const enRetard = filtrer(locataires.filter(l => l.statut === 'en_retard'))
   const payes = filtrer(locataires.filter(l => l.statut === 'paye'))
   const enAttente = filtrer(locataires.filter(l => l.statut === 'en_attente'))
+  const tous = filtrer(locataires)
   const totalRetard = locataires.filter(l => l.statut === 'en_retard').length
   const totalPaye = locataires.filter(l => l.statut === 'paye').length
   const totalAttente = locataires.filter(l => l.statut === 'en_attente').length
   const totalLoyers = locataires.reduce((acc, l) => acc + (parseFloat(l.loyer_montant) || 0), 0)
   const contratsExpirants = locataires.filter(l => { const j = joursAvantExpiration(l.contrat_fin); return j !== null && j <= 90 })
-
-  // Impact financier
   const loyersArisque = locataires.filter(l => l.statut === 'en_retard').reduce((acc, l) => acc + (parseFloat(l.loyer_montant) || 0), 0)
   const loyersSecurisables = locataires.filter(l => l.statut === 'en_retard' && joursEnRetard(l.date_retard) < 15).reduce((acc, l) => acc + (parseFloat(l.loyer_montant) || 0), 0)
-
-  // Dossiers critiques / à surveiller / normaux
-  const dossiersCritiques = locataires.filter(l => { const s = scoreRisque(l); return s && (s.niveau === 'critique' || s.niveau === 'eleve') }).length
-  const dossiersASurveiller = locataires.filter(l => { const s = scoreRisque(l); return s && (s.niveau === 'moyen' || s.niveau === 'inhabituel') }).length
-  const dossiersNormaux = locataires.length - dossiersCritiques - dossiersASurveiller
+  const dossiersCritiques = locataires.filter(l => { const s = scoreRisque(l); return s && (s.niveau === 'critique' || s.niveau === 'eleve') })
+  const dossiersASurveiller = locataires.filter(l => { const s = scoreRisque(l); return s && (s.niveau === 'moyen' || s.niveau === 'inhabituel') })
+  const locInhabituels = locataires.filter(l => { const s = scoreRisque(l); return s && s.niveau === 'inhabituel' })
 
   function getRecommandations() {
     const recs = []
     locataires.filter(l => l.statut === 'en_retard').forEach(l => {
       const j = joursEnRetard(l.date_retard)
       const derniereRelance = joursDepuis(l.derniere_relance)
-      if (j >= 21) recs.push({ locataire: l, jours: j, message: `Mise en demeure — ${j}j de retard`, action: 'Niveau 3', couleur: '#f87171', icon: '🚨' })
-      else if (j >= 8 && (derniereRelance === null || derniereRelance >= 7)) recs.push({ locataire: l, jours: j, message: `Relance ferme — ${j}j de retard`, action: 'Niveau 2', couleur: '#fb923c', icon: '⚠️' })
-      else if (j >= 1 && derniereRelance === null) recs.push({ locataire: l, jours: j, message: `Premier rappel — ${j}j, aucune relance`, action: 'Niveau 1', couleur: '#fbbf24', icon: '💬' })
+      if (j >= 21) recs.push({ locataire: l, jours: j, message: `Mise en demeure — ${j}j`, couleur: '#f87171', icon: '🚨' })
+      else if (j >= 8 && (derniereRelance === null || derniereRelance >= 7)) recs.push({ locataire: l, jours: j, message: `Relance ferme — ${j}j`, couleur: '#fb923c', icon: '⚠️' })
+      else if (j >= 1 && derniereRelance === null) recs.push({ locataire: l, jours: j, message: `Premier rappel — ${j}j`, couleur: '#fbbf24', icon: '💬' })
     })
-    return recs.sort((a, b) => b.jours - a.jours).slice(0, 5)
+    return recs.sort((a, b) => b.jours - a.jours).slice(0, 4)
   }
 
   function niveauRelance(l) {
@@ -215,12 +205,12 @@ export default function Dashboard() {
   }
 
   const recommandations = getRecommandations()
-  const totalAlertes = recommandations.length + contratsExpirants.length
-  const tous = filtrer(locataires)
   const listeActive = onglet === 'retard' ? enRetard : onglet === 'paye' ? payes : onglet === 'attente' ? enAttente : tous
 
-  // Locataires à comportement inhabituel
-  const locInhabituels = locataires.filter(l => { const s = scoreRisque(l); return s && s.niveau === 'inhabituel' })
+  function activerFiltreRisque(filtre) {
+    setFiltreRisque(prev => prev === filtre ? null : filtre)
+    setOnglet('retard')
+  }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -238,10 +228,10 @@ export default function Dashboard() {
   })
 
   const statCards = [
-    { label: 'Total locataires', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', onClick: () => setOnglet('tous') },
-    { label: 'En retard', value: totalRetard, color: '#f87171', bg: 'rgba(248,113,113,0.08)', onClick: () => setOnglet('retard') },
-    { label: 'Payes', value: totalPaye, color: '#34d399', bg: 'rgba(52,211,153,0.08)', onClick: () => setOnglet('paye') },
-    { label: 'En attente', value: totalAttente, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', onClick: () => setOnglet('attente') },
+    { label: 'Total', value: locataires.length, color: '#e2e8f0', bg: 'rgba(255,255,255,0.04)', onClick: () => { setOnglet('tous'); setFiltreRisque(null) } },
+    { label: 'En retard', value: totalRetard, color: '#f87171', bg: 'rgba(248,113,113,0.08)', onClick: () => { setOnglet('retard'); setFiltreRisque(null) } },
+    { label: 'Payes', value: totalPaye, color: '#34d399', bg: 'rgba(52,211,153,0.08)', onClick: () => { setOnglet('paye'); setFiltreRisque(null) } },
+    { label: 'En attente', value: totalAttente, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', onClick: () => { setOnglet('attente'); setFiltreRisque(null) } },
     { label: 'Loyers / mois', value: totalLoyers.toLocaleString('fr-FR') + '€', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', onClick: null },
   ]
 
@@ -251,14 +241,14 @@ export default function Dashboard() {
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1a1a24; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+        .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; font-family: inherit; }
         .nav-link:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
         .nav-link.active { background: rgba(59,130,246,0.15); color: #60a5fa; }
         .nav-link.ai-btn { background: linear-gradient(135deg, rgba(37,99,235,0.15), rgba(124,58,237,0.15)); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.2); }
         .nav-link.ai-btn:hover { background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(124,58,237,0.25)); color: #c4b5fd; }
-        .stat-card { border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.06); transition: all 0.2s; }
-        .stat-card.clickable { cursor: pointer; } .stat-card.clickable:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); }
-        .row-item { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
+        .stat-card { border-radius: 14px; padding: 16px 18px; border: 1px solid rgba(255,255,255,0.06); transition: all 0.2s; cursor: pointer; }
+        .stat-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); }
+        .row-item { padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
         .row-item:last-child { border-bottom: none; } .row-item:hover { background: rgba(255,255,255,0.03); }
         .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.15s; text-decoration: none; font-family: inherit; }
         .btn:hover { transform: translateY(-1px); } .btn:active { transform: translateY(0); }
@@ -268,16 +258,17 @@ export default function Dashboard() {
         .btn-ghost { background: rgba(255,255,255,0.06); color: #94a3b8; }
         .btn-purple { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); }
         .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-        .tab { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+        .tab { padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all 0.2s; font-family: inherit; }
         .tab.active { background: #2563eb; color: white; } .tab.inactive { background: transparent; color: #64748b; } .tab.inactive:hover { color: #94a3b8; background: rgba(255,255,255,0.04); }
         .input-search { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 10px 16px; color: #e2e8f0; font-size: 14px; outline: none; width: 100%; transition: all 0.2s; font-family: inherit; }
         .input-search:focus { border-color: rgba(59,130,246,0.4); background: rgba(255,255,255,0.07); }
         .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; backdrop-filter: blur(4px); }
         .modal { background: #1a1a24; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 28px; max-width: 440px; width: 100%; }
+        .filtre-btn { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; font-family: inherit; width: 100%; text-align: left; }
+        .filtre-btn:hover { background: rgba(255,255,255,0.05); }
+        .filtre-btn.actif { border-color: currentColor; }
         @keyframes fadeInUp { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform: translateY(0); } }
         .animate-in { animation: fadeInUp 0.4s ease forwards; opacity: 0; }
-        @keyframes slideDown { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
-        .slide-down { animation: slideDown 0.2s ease forwards; }
       `}</style>
 
       <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -292,10 +283,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155', letterSpacing: '0.08em', padding: '0 14px', marginBottom: '4px', textTransform: 'uppercase' }}>Navigation</div>
-          <button className="nav-link active">
-            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            Dashboard
-          </button>
+          <button className="nav-link active"><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
           <a href="/stats" className="nav-link"><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Statistiques</a>
           <a href="/historique" className="nav-link"><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Historique</a>
           <a href="/locataires/nouveau" className="nav-link"><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nouveau locataire</a>
@@ -320,12 +308,12 @@ export default function Dashboard() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
 
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', ...fadeIn(0.05) }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', ...fadeIn(0.05) }}>
             <div>
               <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.5px' }}>Dashboard</h1>
               <p style={{ fontSize: '13px', color: '#475569', marginTop: '3px' }}>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
             </div>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
               <button className="btn btn-ghost" onClick={() => setConfirmReinit(true)}>
                 <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 Nouveau mois
@@ -337,152 +325,126 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ── RÉSUMÉ DU JOUR ── */}
-          <div style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.08), rgba(124,58,237,0.08))', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap', ...fadeIn(0.1) }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <span style={{ fontSize: '16px' }}>🧠</span>
-              <span style={{ fontSize: '12px', fontWeight: '700', color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Résumé du jour</span>
-            </div>
-            <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
-            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', flex: 1 }}>
-              {totalRetard > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f87171', flexShrink: 0, display: 'inline-block' }} />
-                  <span style={{ fontSize: '13px', color: '#e2e8f0' }}><strong style={{ color: '#f87171' }}>{totalRetard}</strong> loyer{totalRetard > 1 ? 's' : ''} en retard</span>
-                </div>
-              )}
-              {loyersArisque > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fb923c', flexShrink: 0, display: 'inline-block' }} />
-                  <span style={{ fontSize: '13px', color: '#e2e8f0' }}><strong style={{ color: '#fb923c' }}>{loyersArisque.toLocaleString('fr-FR')}€</strong> à risque</span>
-                </div>
-              )}
-              {dossiersCritiques > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f87171', flexShrink: 0, display: 'inline-block' }} />
-                  <span style={{ fontSize: '13px', color: '#e2e8f0' }}><strong style={{ color: '#f87171' }}>{dossiersCritiques}</strong> dossier{dossiersCritiques > 1 ? 's' : ''} critique{dossiersCritiques > 1 ? 's' : ''}</span>
-                </div>
-              )}
-              {contratsExpirants.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fbbf24', flexShrink: 0, display: 'inline-block' }} />
-                  <span style={{ fontSize: '13px', color: '#e2e8f0' }}><strong style={{ color: '#fbbf24' }}>{contratsExpirants.length}</strong> contrat{contratsExpirants.length > 1 ? 's' : ''} expirant{contratsExpirants.length > 1 ? 's' : ''}</span>
-                </div>
-              )}
-              {locInhabituels.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a78bfa', flexShrink: 0, display: 'inline-block' }} />
-                  <span style={{ fontSize: '13px', color: '#e2e8f0' }}><strong style={{ color: '#a78bfa' }}>{locInhabituels.length}</strong> comportement{locInhabituels.length > 1 ? 's' : ''} inhabituel{locInhabituels.length > 1 ? 's' : ''}</span>
-                </div>
-              )}
-              {totalRetard === 0 && dossiersCritiques === 0 && contratsExpirants.length === 0 && (
-                <span style={{ fontSize: '13px', color: '#34d399' }}>✓ Tout est en ordre aujourd'hui</span>
-              )}
-            </div>
-          </div>
+          {/* ── BLOC COPILOTE UNIQUE ── */}
+          {(loyersArisque > 0 || contratsExpirants.length > 0 || recommandations.length > 0) && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: 'rgba(255,255,255,0.06)', borderRadius: '18px', overflow: 'hidden', marginBottom: '24px', border: '1px solid rgba(255,255,255,0.06)', ...fadeIn(0.1) }}>
 
-          {/* ── IMPACT FINANCIER ── */}
-          {loyersArisque > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px', ...fadeIn(0.12) }}>
-              <div style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', borderRadius: '14px', padding: '16px 18px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>💸 Loyers à risque</div>
-                <div style={{ fontSize: '26px', fontWeight: '700', color: '#f87171', fontFamily: "'DM Mono', monospace" }}>{loyersArisque.toLocaleString('fr-FR')}€</div>
-                <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>{totalRetard} locataire{totalRetard > 1 ? 's' : ''} en retard</div>
-              </div>
-              <div style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: '14px', padding: '16px 18px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>💡 Sécurisable sous 5j</div>
-                <div style={{ fontSize: '26px', fontWeight: '700', color: '#34d399', fontFamily: "'DM Mono', monospace" }}>{loyersSecurisables.toLocaleString('fr-FR')}€</div>
-                <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>Retards récents — action rapide possible</div>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '16px 18px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Priorisation dossiers</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: '#f87171' }}>⚠️ Critiques</span>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#f87171' }}>{dossiersCritiques}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: '#fb923c' }}>👁 À surveiller</span>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#fb923c' }}>{dossiersASurveiller}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: '#34d399' }}>✓ Normaux</span>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#34d399' }}>{dossiersNormaux}</span>
-                  </div>
+              {/* Gauche — chiffres clés */}
+              <div style={{ background: '#13131a', padding: '22px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '18px' }}>
+                  <span style={{ fontSize: '13px' }}>🧠</span>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Situation du jour</span>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Bandeau alertes IA */}
-          {totalAlertes > 0 && (
-            <div style={{ marginBottom: '20px', ...fadeIn(0.15) }}>
-              <button onClick={() => setBandeauOuvert(o => !o)} style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: bandeauOuvert ? '14px 14px 0 0' : '14px', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                  {recommandations.length > 0 && <span style={{ background: 'rgba(124,58,237,0.15)', color: '#a5b4fc', borderRadius: '20px', padding: '3px 10px', fontSize: '12px', fontWeight: '600' }}>🤖 {recommandations.length} action{recommandations.length > 1 ? 's' : ''} IA</span>}
-                  {contratsExpirants.length > 0 && <span style={{ background: 'rgba(251,146,60,0.12)', color: '#fb923c', borderRadius: '20px', padding: '3px 10px', fontSize: '12px', fontWeight: '600' }}>⚠️ {contratsExpirants.length} contrat{contratsExpirants.length > 1 ? 's' : ''} expirant{contratsExpirants.length > 1 ? 's' : ''}</span>}
-                </div>
-                <span style={{ color: '#475569', fontSize: '12px', display: 'inline-block', transform: bandeauOuvert ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-                <button onClick={e => { e.stopPropagation(); setBandeauOuvert(false) }} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#475569', cursor: 'pointer', padding: '2px 7px', borderRadius: '6px', fontSize: '14px', fontFamily: 'inherit' }}>×</button>
-              </button>
-              {bandeauOuvert && (
-                <div className="slide-down" style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.08)', borderTop: 'none', borderRadius: '0 0 14px 14px', overflow: 'hidden' }}>
-                  {recommandations.length > 0 && (
-                    <div style={{ padding: '16px 18px', borderBottom: contratsExpirants.length > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Recommandations IA</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {recommandations.map((rec, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{rec.icon}</span>
-                              <span style={{ fontSize: '13px', fontWeight: '600', color: rec.couleur }}>{rec.locataire.nom}</span>
-                              <span style={{ fontSize: '12px', color: '#475569' }}>{rec.message}</span>
-                            </div>
-                            <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => demanderRelance(rec.locataire)}>Envoyer →</button>
-                          </div>
-                        ))}
-                      </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Loyers à risque */}
+                  {loyersArisque > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b' }}>💸 Loyers à risque</span>
+                      <span style={{ fontSize: '18px', fontWeight: '700', color: '#f87171', fontFamily: "'DM Mono', monospace" }}>{loyersArisque.toLocaleString('fr-FR')}€</span>
+                    </div>
+                  )}
+                  {loyersSecurisables > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b' }}>💡 Sécurisable &lt;5j</span>
+                      <span style={{ fontSize: '18px', fontWeight: '700', color: '#34d399', fontFamily: "'DM Mono', monospace" }}>{loyersSecurisables.toLocaleString('fr-FR')}€</span>
                     </div>
                   )}
                   {contratsExpirants.length > 0 && (
-                    <div style={{ padding: '16px 18px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#fb923c', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Contrats expirants</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {contratsExpirants.map(l => {
-                          const j = joursAvantExpiration(l.contrat_fin)
-                          return (
-                            <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</span>
-                                <span style={{ fontSize: '12px', color: '#475569' }}>{l.appartement}</span>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span className="badge" style={{ background: j < 0 ? 'rgba(248,113,113,0.15)' : 'rgba(251,146,60,0.15)', color: j < 0 ? '#f87171' : '#fb923c' }}>{j < 0 ? 'Expiré depuis ' + Math.abs(j) + 'j' : 'Dans ' + j + 'j'}</span>
-                                <a href={"/locataires/" + l.id} className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '12px' }}>Voir</a>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b' }}>📋 Contrats expirants</span>
+                      <span style={{ fontSize: '18px', fontWeight: '700', color: '#fbbf24', fontFamily: "'DM Mono', monospace" }}>{contratsExpirants.length}</span>
                     </div>
                   )}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <button className="filtre-btn" onClick={() => activerFiltreRisque('critique')}
+                      style={{ color: '#f87171', background: filtreRisque === 'critique' ? 'rgba(248,113,113,0.08)' : 'transparent', borderColor: filtreRisque === 'critique' ? 'rgba(248,113,113,0.3)' : 'transparent' }}>
+                      <span style={{ fontSize: '12px' }}>⚠️ Critiques</span>
+                      <span style={{ fontSize: '14px', fontWeight: '700' }}>{dossiersCritiques.length}</span>
+                    </button>
+                    <button className="filtre-btn" onClick={() => activerFiltreRisque('surveiller')}
+                      style={{ color: '#fb923c', background: filtreRisque === 'surveiller' ? 'rgba(251,146,60,0.08)' : 'transparent', borderColor: filtreRisque === 'surveiller' ? 'rgba(251,146,60,0.3)' : 'transparent' }}>
+                      <span style={{ fontSize: '12px' }}>👁 À surveiller</span>
+                      <span style={{ fontSize: '14px', fontWeight: '700' }}>{dossiersASurveiller.length}</span>
+                    </button>
+                    {locInhabituels.length > 0 && (
+                      <button className="filtre-btn" onClick={() => activerFiltreRisque('inhabituel')}
+                        style={{ color: '#a78bfa', background: filtreRisque === 'inhabituel' ? 'rgba(167,139,250,0.08)' : 'transparent', borderColor: filtreRisque === 'inhabituel' ? 'rgba(167,139,250,0.3)' : 'transparent' }}>
+                        <span style={{ fontSize: '12px' }}>⚡ Inhabituels</span>
+                        <span style={{ fontSize: '14px', fontWeight: '700' }}>{locInhabituels.length}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
+
+              {/* Droite — actions prioritaires */}
+              <div style={{ background: '#0f0f13', padding: '22px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '18px' }}>
+                  <span style={{ fontSize: '13px' }}>🤖</span>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Actions prioritaires</span>
+                </div>
+                {recommandations.length === 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'rgba(52,211,153,0.06)', borderRadius: '10px', border: '1px solid rgba(52,211,153,0.12)' }}>
+                    <span>✓</span>
+                    <span style={{ fontSize: '13px', color: '#34d399' }}>Aucune action requise aujourd'hui</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {recommandations.map((rec, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', transition: 'all 0.15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                        <span style={{ fontSize: '14px', flexShrink: 0 }}>{rec.icon}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rec.locataire.nom}</div>
+                          <div style={{ fontSize: '11px', color: rec.couleur, marginTop: '1px' }}>{rec.message}</div>
+                        </div>
+                        <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '12px', flexShrink: 0 }} onClick={() => demanderRelance(rec.locataire)}>Envoyer →</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {contratsExpirants.length > 0 && (
+                  <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    {contratsExpirants.slice(0, 2).map(l => {
+                      const j = joursAvantExpiration(l.contrat_fin)
+                      return (
+                        <a key={l.id} href={"/locataires/" + l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(251,146,60,0.06)', borderRadius: '10px', border: '1px solid rgba(251,146,60,0.1)', textDecoration: 'none', transition: 'all 0.15s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.1)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(251,146,60,0.06)'}>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9' }}>{l.nom}</div>
+                            <div style={{ fontSize: '11px', color: '#475569' }}>Contrat · {l.appartement}</div>
+                          </div>
+                          <span style={{ fontSize: '11px', fontWeight: '600', color: j < 0 ? '#f87171' : '#fb923c', background: j < 0 ? 'rgba(248,113,113,0.1)' : 'rgba(251,146,60,0.1)', padding: '3px 8px', borderRadius: '6px' }}>
+                            {j < 0 ? 'Expiré' : 'Dans ' + j + 'j'}
+                          </span>
+                        </a>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Stat cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px', ...fadeIn(0.2) }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px', ...fadeIn(0.2) }}>
             {statCards.map((s, i) => (
-              <div key={i} className={`stat-card ${s.onClick ? 'clickable' : ''}`} style={{ background: s.bg }} onClick={s.onClick || undefined}>
-                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '500', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: s.color, fontFamily: "'DM Mono', monospace", letterSpacing: '-1px' }}>{s.value}</div>
-                {s.onClick && <div style={{ fontSize: '11px', color: '#334155', marginTop: '6px' }}>Voir →</div>}
+              <div key={i} className="stat-card" style={{ background: s.bg }} onClick={s.onClick || undefined}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
+                <div style={{ fontSize: '26px', fontWeight: '700', color: s.color, fontFamily: "'DM Mono', monospace", letterSpacing: '-1px' }}>{s.value}</div>
               </div>
             ))}
           </div>
+
+          {/* Filtre actif badge */}
+          {filtreRisque && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', padding: '8px 14px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '10px', ...fadeIn(0) }}>
+              <span style={{ fontSize: '13px', color: '#a5b4fc' }}>Filtre actif : {filtreRisque === 'critique' ? '⚠️ Critiques' : filtreRisque === 'surveiller' ? '👁 À surveiller' : '⚡ Inhabituels'}</span>
+              <button onClick={() => setFiltreRisque(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px', padding: '0 4px' }}>×</button>
+            </div>
+          )}
 
           {/* Recherche + onglets */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px', ...fadeIn(0.25) }}>
@@ -497,7 +459,7 @@ export default function Dashboard() {
                 { id: 'attente', label: 'En attente', count: totalAttente, color: '#fb923c' },
                 { id: 'paye', label: 'Payes', count: totalPaye, color: '#34d399' },
               ].map(t => (
-                <button key={t.id} className={`tab ${onglet === t.id ? 'active' : 'inactive'}`} onClick={() => setOnglet(t.id)}>
+                <button key={t.id} className={`tab ${onglet === t.id ? 'active' : 'inactive'}`} onClick={() => { setOnglet(t.id); setFiltreRisque(null) }}>
                   {t.label} <span style={{ marginLeft: '4px', fontWeight: '700', color: onglet === t.id ? 'rgba(255,255,255,0.8)' : t.color }}>{t.count}</span>
                 </button>
               ))}
@@ -521,8 +483,8 @@ export default function Dashboard() {
           <div style={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', ...fadeIn(0.3) }}>
             {listeActive.length === 0 && (
               <div style={{ padding: '48px', textAlign: 'center', color: '#334155' }}>
-                <div style={{ fontSize: '32px', marginBottom: '8px' }}>{onglet === 'retard' ? '✅' : onglet === 'paye' ? '⏳' : '📋'}</div>
-                <div style={{ fontSize: '14px' }}>{onglet === 'retard' ? 'Aucun loyer en retard' : onglet === 'paye' ? 'Aucun paiement ce mois-ci' : 'Aucun locataire'}</div>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>{filtreRisque ? '🔍' : onglet === 'retard' ? '✅' : onglet === 'paye' ? '⏳' : '📋'}</div>
+                <div style={{ fontSize: '14px' }}>{filtreRisque ? 'Aucun locataire dans ce filtre' : onglet === 'retard' ? 'Aucun loyer en retard' : onglet === 'paye' ? 'Aucun paiement ce mois-ci' : 'Aucun locataire'}</div>
               </div>
             )}
 
@@ -534,27 +496,17 @@ export default function Dashboard() {
               return (
                 <div key={l.id} className="row-item animate-in" style={{ animationDelay: i * 0.04 + 's', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
-                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(248,113,113,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '15px', fontWeight: '700', color: '#f87171' }}>
-                      {l.nom.charAt(0).toUpperCase()}
-                    </div>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(248,113,113,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '15px', fontWeight: '700', color: '#f87171' }}>{l.nom.charAt(0).toUpperCase()}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.nom}</div>
                       <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{l.derniere_relance ? ` · Relance il y a ${joursDepuis(l.derniere_relance)}j` : ''}</div>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '600', color: niveauRelance(l).color, background: niveauRelance(l).bg, borderRadius: '4px', padding: '2px 6px' }}>
-                          🤖 {niveauRelance(l).label}
-                        </span>
-                        {score && (
-                          <span style={{ fontSize: '11px', fontWeight: '600', color: score.color, background: score.bg, borderRadius: '4px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: score.dot, display: 'inline-block' }} />
-                            Risque {score.label}
-                            {score.raisons[1] && <span style={{ color: score.color, opacity: 0.7 }}>· {score.raisons[1]}</span>}
-                          </span>
-                        )}
+                      <div style={{ display: 'flex', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: niveauRelance(l).color, background: niveauRelance(l).bg, borderRadius: '4px', padding: '2px 6px' }}>🤖 {niveauRelance(l).label}</span>
+                        {score && <span style={{ fontSize: '11px', fontWeight: '600', color: score.color, background: score.bg, borderRadius: '4px', padding: '2px 6px' }}><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: score.dot, display: 'inline-block', marginRight: '3px', verticalAlign: 'middle' }} />Risque {score.label}{score.raisons[1] ? ' · ' + score.raisons[1] : ''}</span>}
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     <span className="badge" style={{ background: badgeBg, color: badgeColor }}>{j}j</span>
                     <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
                     <button className="btn btn-blue" onClick={() => demanderRelance(l)}>Relance</button>
@@ -574,7 +526,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
                   <button className="btn btn-green" onClick={() => marquerPaye(l.id, l.nom)}>Paye</button>
                   <button className="btn btn-red" onClick={() => marquerEnRetard(l.id)}>En retard</button>
@@ -597,7 +549,7 @@ export default function Dashboard() {
                       {score && <span style={{ fontSize: '11px', fontWeight: '600', color: score.color, background: score.bg, borderRadius: '4px', padding: '2px 6px', marginTop: '3px', display: 'inline-block' }}><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: score.dot, display: 'inline-block', marginRight: '3px', verticalAlign: 'middle' }} />Risque {score.label}</span>}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     <span className="badge" style={{ background: statutColor + '18', color: statutColor }}>{statutLabel}</span>
                     <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
                     <a href={"/locataires/" + l.id} className="btn btn-ghost">Voir</a>
@@ -618,7 +570,7 @@ export default function Dashboard() {
                       <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{l.appartement}{jp ? ` · Prochain dans ${jp}j` : ''}</div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {jp && <span className="badge" style={{ background: 'rgba(52,211,153,0.1)', color: jpColor }}>Dans {jp}j</span>}
                     <span style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', fontFamily: "'DM Mono', monospace" }}>{l.loyer_montant}€</span>
                     <span style={{ fontSize: '12px', color: '#34d399', fontWeight: '600' }}>✓ Paye</span>
@@ -633,7 +585,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Modals */}
       {confirmation && (
         <div className="modal-bg">
           <div className="modal">
