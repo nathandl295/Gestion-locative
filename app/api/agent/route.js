@@ -42,20 +42,22 @@ DONNÉES EN TEMPS RÉEL :
 - En attente : ${enAttente.length}
 - Loyers totaux/mois : ${totalLoyers}€
 
-LOCATAIRES EN RETARD :
-${enRetard.map(l => `- ${l.nom} (${l.appartement}) : ${joursEnRetard(l.date_retard)}j de retard, ${l.loyer_montant}€, email: ${l.email || 'inconnu'}${l.derniere_relance ? `, dernière relance il y a ${Math.floor((new Date() - new Date(l.derniere_relance)) / 86400000)}j` : ', jamais relancé'}`).join('\n') || 'Aucun'}
+LOCATAIRES EN RETARD (avec leurs IDs exacts) :
+${enRetard.map(l => `- ID:"${l.id}" | ${l.nom} (${l.appartement}) : ${joursEnRetard(l.date_retard)}j de retard, ${l.loyer_montant}€${l.derniere_relance ? `, dernière relance il y a ${Math.floor((new Date() - new Date(l.derniere_relance)) / 86400000)}j` : ', jamais relancé'}`).join('\n') || 'Aucun'}
 
-TOUS LES LOCATAIRES :
-${locs.map(l => `- ${l.nom} (${l.appartement}) : ${l.statut}, ${l.loyer_montant}€/mois`).join('\n')}
+TOUS LES LOCATAIRES (avec leurs IDs exacts) :
+${locs.map(l => `- ID:"${l.id}" | ${l.nom} (${l.appartement}) : ${l.statut}, ${l.loyer_montant}€/mois`).join('\n')}
 
-INSTRUCTIONS :
-- Réponds en français, de façon directe et professionnelle
-- Tu peux effectuer des actions : marquer payé, marquer en retard, envoyer des relances
-- Si tu effectues des actions, retourne-les dans le champ "actions"
-- Format de réponse JSON : {"message": "ta réponse", "actions": []}
-- Les actions possibles : {"type": "marquer_paye", "nom": "Nom", "id": "uuid"} ou {"type": "marquer_retard", "nom": "Nom", "id": "uuid"} ou {"type": "envoyer_relance", "nom": "Nom", "id": "uuid"}
-- Si pas d'action, "actions" doit être un tableau vide []
-- Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks`
+RÈGLES ABSOLUES :
+1. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans texte avant ou après.
+2. Format OBLIGATOIRE : {"message":"ta réponse en français","actions":[]}
+3. CRITIQUE : Quand l'utilisateur demande d'envoyer une relance, marquer payé, ou marquer en retard, tu DOIS mettre l'action dans le tableau "actions" avec l'ID exact du locataire. Ne jamais dire "j'ai envoyé" sans mettre l'action correspondante.
+4. Actions disponibles :
+   - Envoyer relance : {"type":"envoyer_relance","nom":"Nom Prénom","id":"uuid-exact"}
+   - Marquer payé : {"type":"marquer_paye","nom":"Nom Prénom","id":"uuid-exact"}
+   - Marquer en retard : {"type":"marquer_retard","nom":"Nom Prénom","id":"uuid-exact"}
+5. Pour plusieurs locataires, mets plusieurs objets dans le tableau actions.
+6. Utilise TOUJOURS l'ID exact fourni dans la liste ci-dessus, jamais un ID inventé.`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
