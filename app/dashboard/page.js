@@ -134,14 +134,12 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, avec exacteme
 {"lignes":["observation 1 courte","observation 2 courte","observation 3 courte"],"action":"action recommandée prioritaire en 1 phrase","urgence":"haute"}
 
 urgence doit être "haute", "normale" ou "faible". Les observations: précises, max 12 mots chacune. Ton direct et professionnel.`
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('/api/analyse', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 300, messages: [{ role: 'user', content: prompt }] })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt })
   })
-  const data = await res.json()
-  const texte = data.content?.map(c => c.text || '').join('').trim()
-  return JSON.parse(texte)
+  return await res.json()
 }
 
 export default function Dashboard() {
