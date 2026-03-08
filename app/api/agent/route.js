@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 
+const resend = new Resend(process.env.RESEND_API_KEY)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -104,12 +106,22 @@ INSTRUCTIONS :
             const template = templates?.find(t => j >= t.jours_min && (t.jours_max === null || j <= t.jours_max))
             if (template) {
               const replace = s => s.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
-              const relRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://' + req.headers.get('host')}/api/relance`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nom: locataire.nom, email: locataire.email, sujet: replace(template.sujet), corps: replace(template.corps).split('\n').join('<br/>'), locataire_id: locataire.id, template_nom: template.nom })
-              })
-              actionsResults.push({ ...action, success: relRes.ok })
+              const sujet = replace(template.sujet)
+              const corps = replace(template.corps).split('\n').join('<br/>')
+              try {
+                await resend.emails.send({
+                  from: `${agence?.nom || 'GestImmo'} <onboarding@resend.dev>`,
+                  to: locataire.email,
+                  subject: sujet,
+                  html: corps
+                })
+                const now = new Date().toISOString()
+                await supabase.from('relances').insert([{ locataire_id: locataire.id, template_nom: template.nom, envoye_le: now }])
+                await supabase.from('locataires').update({ derniere_relance: now }).eq('id', locataire.id)
+                actionsResults.push({ ...action, success: true })
+              } catch (e) {
+                actionsResults.push({ ...action, success: false, reason: e.message })
+              }
             } else {
               actionsResults.push({ ...action, success: false, reason: 'Aucun template applicable' })
             }
