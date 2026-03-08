@@ -10,11 +10,13 @@ const supabase = createClient(
 export async function POST(request) {
   const { email, sujet, corps, locataire_id, template_nom } = await request.json()
 
+  const html = corps.replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>')
+
   await resend.emails.send({
     from: 'Agence Pro <onboarding@resend.dev>',
     to: email,
     subject: sujet,
-    html: corps.split('\\n').join('<br/>').split('\n').join('<br/>')
+    html
   })
 
   if (locataire_id && template_nom) {

@@ -20,10 +20,10 @@ export async function POST(req) {
     const messages = body.messages || [...(body.history || []), { role: 'user', content: body.message }]
 
     // Récupérer les données en temps réel
-    const [{ data: locataires }, { data: agence }, { data: relances }] = await Promise.all([
+    const [{ data: locataires }, { data: agence }, { data: templates }] = await Promise.all([
       supabase.from('locataires').select('*'),
       supabase.from('agence').select('*').single(),
-      supabase.from('relances').select('*').order('envoye_le', { ascending: false }).limit(50)
+      supabase.from('templates').select('*').order('jours_min')
     ])
 
     const locs = locataires || []
@@ -42,6 +42,9 @@ DONNÉES EN TEMPS RÉEL :
 - En attente : ${enAttente.length}
 - Loyers totaux/mois : ${totalLoyers}€
 
+TEMPLATES DISPONIBLES :
+${(templates || []).map(t => `- nom:"${t.nom}" | sujet:"${t.sujet}" | pour: ${t.jours_min}j${t.jours_max ? '-' + t.jours_max + 'j' : '+'} de retard`).join('\n') || 'Aucun template'}
+
 LOCATAIRES EN RETARD (avec leurs IDs exacts) :
 ${enRetard.map(l => `- ID:"${l.id}" | ${l.nom} (${l.appartement}) : ${joursEnRetard(l.date_retard)}j de retard, ${l.loyer_montant}€${l.derniere_relance ? `, dernière relance il y a ${Math.floor((new Date() - new Date(l.derniere_relance)) / 86400000)}j` : ', jamais relancé'}`).join('\n') || 'Aucun'}
 
@@ -51,13 +54,14 @@ ${locs.map(l => `- ID:"${l.id}" | ${l.nom} (${l.appartement}) : ${l.statut}, ${l
 RÈGLES ABSOLUES :
 1. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans texte avant ou après.
 2. Format OBLIGATOIRE : {"message":"ta réponse en français","actions":[]}
-3. CRITIQUE : Quand l'utilisateur demande d'envoyer une relance, marquer payé, ou marquer en retard, tu DOIS mettre l'action dans le tableau "actions" avec l'ID exact du locataire. Ne jamais dire "j'ai envoyé" sans mettre l'action correspondante.
+3. CRITIQUE : Quand l'utilisateur demande d'envoyer une relance, tu DOIS mettre l'action dans le tableau "actions" avec l'ID exact et le nom exact du template demandé.
 4. Actions disponibles :
-   - Envoyer relance : {"type":"envoyer_relance","nom":"Nom Prénom","id":"uuid-exact"}
+   - Envoyer relance : {"type":"envoyer_relance","nom":"Nom Prénom","id":"uuid-exact","template":"nom exact du template"}
    - Marquer payé : {"type":"marquer_paye","nom":"Nom Prénom","id":"uuid-exact"}
    - Marquer en retard : {"type":"marquer_retard","nom":"Nom Prénom","id":"uuid-exact"}
-5. Pour plusieurs locataires, mets plusieurs objets dans le tableau actions.
-6. Utilise TOUJOURS l'ID exact fourni dans la liste ci-dessus, jamais un ID inventé.`
+5. Pour le champ "template" : utilise le nom exact du template listé ci-dessus. Si l'utilisateur dit "mise en demeure", choisis le template mise en demeure. Si il dit "relance amiable", choisis le template amiable. Si il ne précise pas, choisis selon les jours de retard.
+6. Pour plusieurs locataires, mets plusieurs objets dans le tableau actions.
+7. Utilise TOUJOURS l'ID exact fourni dans la liste ci-dessus, jamais un ID inventé.`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -104,12 +108,14 @@ RÈGLES ABSOLUES :
           const locataire = locs.find(l => l.id === action.id)
           if (locataire) {
             const j = joursEnRetard(locataire.date_retard)
-            const { data: templates } = await supabase.from('templates').select('*').order('jours_min')
-            const template = templates?.find(t => j >= t.jours_min && (t.jours_max === null || j <= t.jours_max))
+            // Utilise le template demandé par l'IA, sinon fallback sur les jours de retard
+            const template = action.template
+              ? templates?.find(t => t.nom.toLowerCase() === action.template.toLowerCase()) || templates?.find(t => j >= t.jours_min && (t.jours_max === null || j <= t.jours_max))
+              : templates?.find(t => j >= t.jours_min && (t.jours_max === null || j <= t.jours_max))
             if (template) {
               const replace = s => s.replace(/{nom}/g, locataire.nom).replace(/{montant}/g, locataire.loyer_montant).replace(/{appartement}/g, locataire.appartement)
               const sujet = replace(template.sujet)
-              const corps = replace(template.corps).split('\n').join('<br/>')
+              const corps = replace(template.corps).replace(/\\n/g, '<br/>').replace(/\n/g, '<br/>')
               try {
                 await resend.emails.send({
                   from: `${agence?.nom || 'GestImmo'} <onboarding@resend.dev>`,
